@@ -41,7 +41,7 @@ const NAV = {
 
 const seed = {
   role: "tenant", view: "discover", selectedRoom: null, selectedConversation: "c1",
-  chatContext: "r2", chatMobileOpen: false, houseSelection: "h1", roomSelection: "r1",
+  chatContext: "r2", chatMobileOpen: false, chatDrafts: {}, houseSelection: "h1", roomSelection: "r1",
   tab: "all", filters: { query: "", area: "all", maxPrice: "", minArea: "", amenity: "", distance: "" },
   favorites: ["r2"],
   houses: [
@@ -117,6 +117,7 @@ const storageKey = "troday-wireframe-v5-20261023";
 let state;
 try { state = JSON.parse(localStorage.getItem(storageKey)) || structuredClone(seed); }
 catch { state = structuredClone(seed); }
+state.chatDrafts ||= {};
 // Update bundled photos in saved demos without resetting the visitor's changes.
 for (const item of state.rooms) {
   const oldPhoto = /^(?:\.?\/)?assets\/(r[1-6])\.png$/i.exec(item.photo || "");
@@ -180,9 +181,11 @@ function render() {
     moderation: renderModeration, templates: renderTemplates, reports: renderReports, users: renderUsers, audit: renderAudit,
     profile: renderProfile
   }[view] || renderDiscover;
-  $("#app-main").innerHTML = renderer();
+  const main = $("#app-main");
+  main.classList.toggle("chat-view", view === "chats");
+  main.innerHTML = renderer();
   refreshIcons();
-  if (view === "chats") { const pane = $(".chat-pane-body"); if (pane) pane.scrollTop = pane.scrollHeight; }
+  if (view === "chats") { syncChatComposer(); const pane = $(".chat-pane-body"); if (pane) pane.scrollTop = pane.scrollHeight; }
 }
 
 function roomCard(r) {
@@ -235,6 +238,16 @@ function chatRoomChoices(conversation) {
   return [...new Set([...current, ...fromMessages])].filter((id) => !!room(id));
 }
 
+function chatDraftKey(conversationId = state.selectedConversation) { return `${userId()}:${conversationId}`; }
+
+function syncChatComposer() {
+  const input = $("#chat-message");
+  if (!input) return;
+  input.style.height = "auto";
+  input.style.height = `${Math.min(input.scrollHeight + 2, 120)}px`;
+  input.form.querySelector("button[type=submit]").disabled = !input.value.trim();
+}
+
 function renderChats() {
   const conversations = visibleConversations();
   const current = conversations.find((c) => c.id === state.selectedConversation) || conversations[0];
@@ -247,12 +260,46 @@ function renderChats() {
     const r = room(m.roomId);
     const context = r && previousRoom !== m.roomId ? `<button type="button" class="context-event" data-action="room-detail" data-id="${r.id}"><img src="${esc(r.photo)}" alt=""><span><strong>${esc(r.code)} · ${esc(r.title)}</strong><small>${shortMoney(r.price)}/tháng · ${esc(house(r.houseId).area)}</small></span></button>` : "";
     previousRoom = m.roomId;
-    return `${context}<div class="message-row ${m.senderId === me ? "mine" : ""}"><div class="message-bubble">${esc(m.text)}<small>${esc(m.time)}</small></div></div>`;
+    return `${context}<div class="message-row ${m.senderId === me ? "mine" : ""}"><div class="message-bubble"><span class="message-text">${esc(m.text)}</span><small>${esc(m.time)}</small></div></div>`;
   }).join("");
   const choices = chatRoomChoices(current);
   const activeRoom = choices.includes(state.chatContext) ? room(state.chatContext) : null;
+  const draft = state.chatDrafts[chatDraftKey(current.id)] || "";
   return head("Tin nhắn", "Trao đổi với từng người và theo dõi ngữ cảnh từng phòng") +
-    `<div class="chat-shell ${state.chatMobileOpen ? "thread-open" : ""}"><section class="chat-contacts"><div class="chat-contact-head"><h2>Hội thoại</h2>${chip(String(conversations.length), "green")}</div><input class="search-input chat-search" id="chat-search" placeholder="Tìm người đang chat" aria-label="Tìm người đang chat"><div class="contact-list">${conversations.map((c) => { const p = otherUser(c); const last = c.messages[c.messages.length - 1]; return `<button type="button" class="contact ${c.id === current.id ? "active" : ""}" data-action="select-chat" data-id="${c.id}">${avatar(p)}<span class="contact-copy"><strong>${esc(person(p).name)}</strong><small>${esc(last?.text || "Bắt đầu cuộc trò chuyện")}</small></span></button>`; }).join("")}</div></section><section class="chat-pane"><div class="chat-pane-head"><button type="button" class="icon-button mobile-back" data-action="back-chats" aria-label="Danh sách hội thoại">${icon("arrow-left")}</button>${avatar(peer)}<div class="head-copy"><h2>${esc(person(peer).name)}</h2><small>${choices.length} phòng đã trao đổi</small></div>${button(`${icon("calendar-plus")} Hẹn xem`, "open-appointment", "", "small", state.role !== "landlord" ? "disabled title=\"Chủ trọ tạo lịch hẹn\"" : "")}</div><div class="chat-pane-body"><div class="message-date">Hội thoại gần đây</div>${messages}</div><form class="chat-composer" data-form="chat-message">${activeRoom ? `<div class="composer-context"><span>Đang hỏi về <strong>${esc(activeRoom.code)} · ${esc(activeRoom.title)}</strong></span><button type="button" class="inline-action" data-action="clear-context">Bỏ chọn</button></div>` : ""}<div class="chat-compose-row"><textarea name="message" maxlength="2000" required placeholder="Viết tin nhắn..."></textarea><button type="submit" class="button primary" aria-label="Gửi tin nhắn" title="Gửi tin nhắn">${icon("send")}</button></div></form></section><aside class="chat-context"><div class="chat-context-head"><h2>Phòng đã trao đổi</h2></div><div class="chat-context-list">${choices.map((id) => { const r = room(id); return `<button type="button" class="context-choice ${state.chatContext === id ? "active" : ""}" data-action="select-context" data-id="${id}"><img src="${esc(r.photo)}" alt=""><span><strong>${esc(r.code)} · ${esc(r.title)}</strong><small>${shortMoney(r.price)}/tháng</small></span></button>`; }).join("")}</div></aside></div>`;
+    `<div class="chat-shell ${state.chatMobileOpen ? "thread-open" : ""}">
+      <section class="chat-contacts">
+        <div class="chat-contact-head"><h2>Hội thoại</h2>${chip(String(conversations.length), "green")}</div>
+        <input class="search-input chat-search" id="chat-search" placeholder="Tìm người đang chat" aria-label="Tìm người đang chat">
+        <div class="contact-list">${conversations.map((c) => {
+          const p = otherUser(c);
+          const last = c.messages[c.messages.length - 1];
+          return `<button type="button" class="contact ${c.id === current.id ? "active" : ""}" data-action="select-chat" data-id="${c.id}">${avatar(p)}<span class="contact-copy"><strong>${esc(person(p).name)}</strong><small>${esc(last?.text || "Bắt đầu cuộc trò chuyện")}</small></span></button>`;
+        }).join("")}</div>
+      </section>
+      <section class="chat-pane" aria-label="Hội thoại với ${esc(person(peer).name)}">
+        <div class="chat-pane-head">
+          <button type="button" class="icon-button mobile-back" data-action="back-chats" aria-label="Danh sách hội thoại">${icon("arrow-left")}</button>
+          ${avatar(peer)}<div class="head-copy"><h2>${esc(person(peer).name)}</h2><small>${choices.length} phòng đã trao đổi</small></div>
+          ${button(`${icon("calendar-plus")} Hẹn xem`, "open-appointment", "", "small", state.role !== "landlord" ? "disabled title=\"Chủ trọ tạo lịch hẹn\"" : "")}
+        </div>
+        <div class="chat-pane-body" role="log" aria-label="Nội dung hội thoại"><div class="message-date">Hội thoại gần đây</div>${messages}</div>
+        <form class="chat-composer" data-form="chat-message" aria-label="Soạn tin nhắn">
+          ${activeRoom ? `<div class="composer-context"><span>Đang hỏi về <strong>${esc(activeRoom.code)} · ${esc(activeRoom.title)}</strong></span><button type="button" class="inline-action" data-action="clear-context">Bỏ chọn</button></div>` : ""}
+          <div class="chat-compose-row">
+            <textarea id="chat-message" name="message" rows="1" maxlength="2000" required placeholder="Nhập tin nhắn..." aria-label="Nội dung tin nhắn" aria-describedby="chat-composer-help">${esc(draft)}</textarea>
+            <button type="submit" class="button primary chat-send" aria-label="Gửi tin nhắn" ${draft.trim() ? "" : "disabled"}>${icon("send")}<span>Gửi</span></button>
+          </div>
+          <p class="composer-help" id="chat-composer-help">Enter để gửi · Shift + Enter để xuống dòng</p>
+        </form>
+      </section>
+      <aside class="chat-context">
+        <div class="chat-context-head"><h2>Phòng đã trao đổi</h2></div>
+        <div class="chat-context-list">${choices.map((id) => {
+          const r = room(id);
+          return `<button type="button" class="context-choice ${state.chatContext === id ? "active" : ""}" data-action="select-context" data-id="${id}"><img src="${esc(r.photo)}" alt=""><span><strong>${esc(r.code)} · ${esc(r.title)}</strong><small>${shortMoney(r.price)}/tháng</small></span></button>`;
+        }).join("")}</div>
+      </aside>
+    </div>`;
 }
 
 const VIEWING_LABEL = { SCHEDULED: ["Đã hẹn", "yellow"], COMPLETED: ["Đã đến xem", "green"], CANCELLED: ["Đã hủy", "gray"], NO_SHOW: ["Không đến", "red"] };
@@ -672,12 +719,14 @@ function handleForm(form) {
     case "chat-message": {
       const c = byId(state.conversations, state.selectedConversation);
       const text = value("message");
-      if (!c || !text) return;
+      if (!c || !c.users.includes(userId()) || !text) return;
+      if (text.length > 2000) { flash("Tin nhắn tối đa 2.000 ký tự."); return; }
       const r = room(state.chatContext);
       if (r && !c.users.includes(house(r.houseId).ownerId)) { flash("Phòng này không thuộc chủ trọ trong hội thoại."); return; }
       const now = new Date();
       c.messages.push({ id: `m${Date.now()}`, senderId: userId(), roomId: r?.id || null, text, time: now.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) });
-      finish(); return;
+      delete state.chatDrafts[chatDraftKey(c.id)];
+      save(); render(); $("#chat-message")?.focus({ preventScroll: true }); return;
     }
     case "appointment": {
       const c = byId(state.conversations, value("conversationId"));
@@ -858,6 +907,14 @@ document.addEventListener("submit", (event) => {
   event.preventDefault();
   handleForm(form);
 });
+
+document.addEventListener("keydown", (event) => {
+  const input = event.target;
+  if (!(input instanceof HTMLTextAreaElement) || input.form?.dataset.form !== "chat-message") return;
+  if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || event.isComposing || event.keyCode === 229) return;
+  event.preventDefault();
+  if (input.value.trim()) input.form.requestSubmit();
+});
 document.addEventListener("change", (event) => {
   const target = event.target;
   if (target.dataset.change === "house") { state.houseSelection = target.value; state.roomSelection = state.rooms.find((r) => r.houseId === target.value)?.id || ""; save(); render(); }
@@ -875,6 +932,10 @@ document.addEventListener("change", (event) => {
   if (target.dataset.change === "change-type") { const section = $("#transfer-target"); if (section) section.hidden = target.value !== "TRANSFER"; }
 });
 document.addEventListener("input", (event) => {
+  if (event.target.id === "chat-message") {
+    state.chatDrafts[chatDraftKey()] = event.target.value;
+    save(); syncChatComposer();
+  }
   if (event.target.id === "chat-search") {
     const query = event.target.value.toLocaleLowerCase("vi-VN");
     document.querySelectorAll(".contact").forEach((node) => { node.hidden = !node.textContent.toLocaleLowerCase("vi-VN").includes(query); });
