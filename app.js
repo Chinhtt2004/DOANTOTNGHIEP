@@ -41,7 +41,7 @@ const NAV = {
 
 const seed = {
   role: "tenant", view: "discover", selectedRoom: null, selectedConversation: "c1",
-  chatContext: "r2", chatMobileOpen: false, chatDrafts: {}, houseSelection: "h1", roomSelection: "r1",
+  chatContext: "r2", chatMobileOpen: false, chatDrafts: {}, chatContexts: {}, houseSelection: "h1", roomSelection: "r1",
   tab: "all", filters: { query: "", area: "all", maxPrice: "", minArea: "", amenity: "", distance: "" },
   favorites: ["r2"],
   houses: [
@@ -118,6 +118,7 @@ let state;
 try { state = JSON.parse(localStorage.getItem(storageKey)) || structuredClone(seed); }
 catch { state = structuredClone(seed); }
 state.chatDrafts ||= {};
+state.chatContexts ||= {};
 // Update bundled photos in saved demos without resetting the visitor's changes.
 for (const item of state.rooms) {
   const oldPhoto = /^(?:\.?\/)?assets\/(r[1-6])\.png$/i.exec(item.photo || "");
@@ -235,10 +236,24 @@ function chatRoomChoices(conversation) {
   const fromMessages = conversation.messages.map((m) => m.roomId).filter(Boolean);
   const selected = state.chatContext;
   const current = selected && room(selected) && conversation.users.includes(house(room(selected).houseId).ownerId) ? [selected] : [];
-  return [...new Set([...current, ...fromMessages])].filter((id) => !!room(id));
+  return [...new Set([...fromMessages, ...(conversation.roomIds || []), ...current])].filter((id) => {
+    const item = room(id);
+    return item && conversation.users.includes(house(item.houseId).ownerId);
+  });
 }
 
 function chatDraftKey(conversationId = state.selectedConversation) { return `${userId()}:${conversationId}`; }
+
+function selectChatContext(id) {
+  const current = visibleConversations().find((c) => c.id === state.selectedConversation);
+  if (!current) return;
+  const choices = chatRoomChoices(current);
+  if (id && !choices.includes(id)) return;
+  current.roomIds = choices;
+  state.chatContext = id || null;
+  state.chatContexts[chatDraftKey(current.id)] = state.chatContext;
+  save(); render();
+}
 
 function syncChatComposer() {
   const input = $("#chat-message");
@@ -253,6 +268,7 @@ function renderChats() {
   const current = conversations.find((c) => c.id === state.selectedConversation) || conversations[0];
   if (!current) return head("Tin nhắn") + empty("Chưa có hội thoại", "Hãy mở một bài đăng và nhắn tin cho chủ trọ.");
   state.selectedConversation = current.id;
+  if (Object.hasOwn(state.chatContexts, chatDraftKey(current.id))) state.chatContext = state.chatContexts[chatDraftKey(current.id)];
   const peer = otherUser(current);
   const me = userId();
   let previousRoom = null;
@@ -284,6 +300,13 @@ function renderChats() {
         </div>
         <div class="chat-pane-body" role="log" aria-label="Nội dung hội thoại"><div class="message-date">Hội thoại gần đây</div>${messages}</div>
         <form class="chat-composer" data-form="chat-message" aria-label="Soạn tin nhắn">
+          <div class="chat-room-picker">
+            <label for="chat-room-context">Trao đổi về</label>
+            <select id="chat-room-context" data-change="chat-context" aria-label="Chọn phòng trao đổi" ${choices.length ? "" : "disabled"}>
+              <option value="" ${activeRoom ? "" : "selected"}>Trao đổi chung</option>
+              ${choices.map((id) => { const r = room(id); return `<option value="${esc(id)}" ${activeRoom?.id === id ? "selected" : ""}>${esc(r.code)} · ${esc(r.title)}</option>`; }).join("")}
+            </select>
+          </div>
           ${activeRoom ? `<div class="composer-context"><span>Đang hỏi về <strong>${esc(activeRoom.code)} · ${esc(activeRoom.title)}</strong></span><button type="button" class="inline-action" data-action="clear-context">Bỏ chọn</button></div>` : ""}
           <div class="chat-compose-row">
             <textarea id="chat-message" name="message" rows="1" maxlength="2000" required placeholder="Nhập tin nhắn..." aria-label="Nội dung tin nhắn" aria-describedby="chat-composer-help">${esc(draft)}</textarea>
@@ -558,16 +581,20 @@ function handleAction(action, id) {
       const owner = house(room(id).houseId).ownerId;
       let c = state.conversations.find((x) => x.users.includes("lan") && x.users.includes(owner));
       if (!c) { c = { id: `c${Date.now()}`, users: ["lan", owner], messages: [] }; state.conversations.push(c); }
-      state.selectedConversation = c.id; state.chatContext = id; state.chatMobileOpen = true; state.view = "chats"; save(); render(); return;
+      c.roomIds = [...new Set([...(c.roomIds || []), id])];
+      state.selectedConversation = c.id; state.chatContext = id; state.chatContexts[chatDraftKey(c.id)] = id;
+      state.chatMobileOpen = true; state.view = "chats"; save(); render(); return;
     }
     case "select-chat": {
-      state.selectedConversation = id; const c = byId(state.conversations, id);
-      state.chatContext = c?.messages[c.messages.length - 1]?.roomId || null;
+      const c = visibleConversations().find((item) => item.id === id);
+      if (!c) return;
+      state.selectedConversation = id;
+      state.chatContext = Object.hasOwn(state.chatContexts, chatDraftKey(c.id)) ? state.chatContexts[chatDraftKey(c.id)] : c.messages[c.messages.length - 1]?.roomId || null;
       state.chatMobileOpen = true; save(); render(); return;
     }
     case "back-chats": state.chatMobileOpen = false; save(); render(); return;
-    case "select-context": state.chatContext = id; save(); render(); return;
-    case "clear-context": state.chatContext = null; save(); render(); return;
+    case "select-context": selectChatContext(id); return;
+    case "clear-context": selectChatContext(null); return;
     case "tab": state.tab = id; save(); render(); return;
     case "open-appointment": openAppointment(); return;
     case "confirm-attendance": {
@@ -917,6 +944,7 @@ document.addEventListener("keydown", (event) => {
 });
 document.addEventListener("change", (event) => {
   const target = event.target;
+  if (target.dataset.change === "chat-context") { selectChatContext(target.value); $("#chat-room-context")?.focus({ preventScroll: true }); return; }
   if (target.dataset.change === "house") { state.houseSelection = target.value; state.roomSelection = state.rooms.find((r) => r.houseId === target.value)?.id || ""; save(); render(); }
   if (target.dataset.change === "room") { state.roomSelection = target.value; save(); render(); }
   if (target.dataset.change === "room-service") {
