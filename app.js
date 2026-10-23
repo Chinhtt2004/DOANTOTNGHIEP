@@ -1,10 +1,10 @@
 const PHOTO = {
-  r1: "assets/r1.png",
-  r2: "assets/r2.png",
-  r3: "assets/r3.png",
-  r4: "assets/r4.png",
-  r5: "assets/r5.png",
-  r6: "assets/r6.png"
+  r1: "assets/r1.webp",
+  r2: "assets/r2.webp",
+  r3: "assets/r3.webp",
+  r4: "assets/r4.webp",
+  r5: "assets/r5.webp",
+  r6: "assets/r6.webp"
 };
 
 const PEOPLE = {
@@ -117,6 +117,11 @@ const storageKey = "troday-wireframe-v5-20261023";
 let state;
 try { state = JSON.parse(localStorage.getItem(storageKey)) || structuredClone(seed); }
 catch { state = structuredClone(seed); }
+// Update bundled photos in saved demos without resetting the visitor's changes.
+for (const item of state.rooms) {
+  const oldPhoto = /^(?:\.?\/)?assets\/(r[1-6])\.png$/i.exec(item.photo || "");
+  if (oldPhoto) item.photo = PHOTO[oldPhoto[1].toLowerCase()];
+}
 const $ = (selector) => document.querySelector(selector);
 const byId = (items, id) => items.find((item) => item.id === id);
 const room = (id) => byId(state.rooms, id);
@@ -831,6 +836,16 @@ function handleForm(form) {
     default: flash("Biểu mẫu chưa có trong bản mô phỏng.");
   }
 }
+
+// Keep the original PNG available if a browser cannot load the lighter WebP.
+document.addEventListener("error", (event) => {
+  const image = event.target;
+  if (!(image instanceof HTMLImageElement)) return;
+  const source = new URL(image.currentSrc || image.src, document.baseURI);
+  if (source.origin !== location.origin || !/\/assets\/r[1-6]\.webp$/.test(source.pathname)) return;
+  source.pathname = source.pathname.replace(/\.webp$/, ".png");
+  image.src = source.href;
+}, true);
 
 document.addEventListener("click", (event) => {
   const target = event.target.closest("[data-action]");
