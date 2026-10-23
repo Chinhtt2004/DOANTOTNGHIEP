@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Trọday - Quản lý thuê trọ</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="icons.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar" aria-label="Dieu huong">
+      <div class="brand"><span class="brand-mark">T</span><span>trọ<span class="brand-accent">day</span></span></div>
+      <div id="sidebar-role"></div>
+      <nav id="sidebar-nav" class="sidebar-nav" aria-label="Muc chinh"></nav>
+      <div id="sidebar-account" class="sidebar-account"></div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar">
+        <div class="topbar-location"><span class="crumb">Trọday</span><span class="crumb-divider">/</span><strong id="topbar-title">Khám phá phòng</strong></div>
+        <div class="topbar-actions">
+          <button type="button" class="icon-button notification-button" data-action="notifications" aria-label="Thông báo" title="Thông báo"><i data-lucide="bell"></i><span id="notification-dot" class="notification-dot"></span></button>
+          <div id="topbar-role-switch" class="role-switch" aria-label="Chuyển vai trò"></div>
+        </div>
+      </header>
+      <main id="app-main" class="main-content" tabindex="-1"></main>
+    </div>
+  </div>
+  <nav id="mobile-nav" class="mobile-nav" aria-label="Dieu huong di dong"></nav>
+  <dialog id="app-dialog" class="app-dialog"><div id="dialog-body"></div></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <noscript>Trang này cần JavaScript để hiển thị giao diện.</noscript>
+</body>
+</html>
