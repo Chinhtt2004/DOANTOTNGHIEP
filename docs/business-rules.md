@@ -52,12 +52,13 @@ Ký hiệu: **Có** = đang được mô phỏng bằng code; **Sửa** = đã c
 
 | Mã | Quy tắc / hành vi | Tình trạng |
 | --- | --- | --- |
-| HT-01 | Chỉ hiển thị hội thoại có tài khoản đang dùng tham gia. Nhắn về phòng sẽ mở/tạo hội thoại giữa người thuê và chủ của phòng. | Có |
+| HT-01 | Chỉ hiển thị hội thoại có tài khoản đang dùng tham gia. Nhắn về phòng sẽ mở/tạo hội thoại giữa người thuê và chủ của phòng; chấp nhận kết nối ở ghép mở hội thoại riêng giữa hai người. | Có / Sửa |
 | HT-02 | Một hội thoại UI có thể chứa nhiều ngữ cảnh phòng và tin nhắn chung; các ngữ cảnh được hiển thị trong dòng thời gian. | Có |
 | HT-03 | Chỉ chọn ngữ cảnh phòng thuộc chủ trọ trong hội thoại; giới hạn tin nhắn 2.000 ký tự, không gửi nội dung trống. | Có |
 | HT-04 | Nháp và ngữ cảnh đang chọn được lưu riêng theo người dùng/hội thoại. Enter gửi, Shift+Enter xuống dòng. | Có |
 | HT-05 | Chủ trọ tạo lịch từ hội thoại cho người thuê và phòng đã trao đổi. | Có |
-| HT-06 | SQL v5 gắn một conversation với một phòng/bài đăng; cần nhóm nhiều conversation ở lớp ứng dụng hoặc migration ngữ cảnh chat để lưu đúng mô hình UI. | Thiết kế |
+| HT-06 | Với hội thoại hỏi phòng, SQL v5 gắn một conversation với một phòng/bài đăng; cần nhóm nhiều conversation ở lớp ứng dụng hoặc migration ngữ cảnh chat để lưu đúng mô hình UI. Hội thoại ở ghép dùng loại `ROOMMATE` và liên kết lời mời đã chấp nhận. | Thiết kế |
+| HT-07 | Chat ở ghép không có nút hẹn xem hoặc ngữ cảnh phòng của cuộc chat trước. Tin nhắn lưu trong cùng hội thoại khi tải lại hoặc mở lại từ lời mời/hồ sơ. Chỉ thành viên của kết nối còn hiệu lực được mở và gửi. | Mới |
 
 ### 1.5. Lịch xem và quyết định thuê
 
@@ -98,7 +99,7 @@ Ký hiệu: **Có** = đang được mô phỏng bằng code; **Sửa** = đã c
 | --- | --- | --- |
 | NO-01 | Người ở và CSV lấy theo dòng thành viên `ACTIVE`, không lọc mất người chỉ vì hợp đồng đóng sai. Dữ liệu mâu thuẫn được đánh dấu đối soát. | Sửa |
 | NO-02 | Màn hình hiển thị cả người dự kiến, người đang ở, lịch sử đã rời/hủy dự kiến và lịch sử yêu cầu thêm người. | Sửa |
-| NO-03 | Yêu cầu thêm người phải có đồng ý của đại diện và người xin vào trước khi chủ trọ duyệt. Demo thể hiện bằng cờ đồng ý; SQL có người/thời điểm đồng ý riêng. | Có một phần |
+| NO-03 | Yêu cầu thêm người phải có đồng ý thuê chung riêng của đại diện hiện tại và người xin vào trước khi chủ trọ duyệt. Chấp nhận kết nối ở ghép không cung cấp hai đồng ý này. Dữ liệu mẫu thể hiện bằng cờ đồng ý; SQL có người/thời điểm đồng ý riêng. | Có một phần |
 | NO-04 | Duyệt chỉ khi hợp đồng `ACTIVE`, đại diện đang ở, trong thời hạn hợp đồng, ngày dự kiến không sau ngày hết hạn và còn chỗ. | Sửa |
 | NO-05 | Khi duyệt phải tính cả chỗ dự kiến và chỗ đã giữ; chặn người đã có lượt ở hoặc yêu cầu trùng đang mở. | Sửa |
 | NO-06 | `APPROVED` giữ một chỗ trong 48 giờ; được hủy giữ chỗ; hết hạn chuyển `EXPIRED`. 48 giờ là chính sách demo. | Sửa |
@@ -142,11 +143,21 @@ Ký hiệu: **Có** = đang được mô phỏng bằng code; **Sửa** = đã c
 | Mã | Quy tắc / hành vi | Tình trạng |
 | --- | --- | --- |
 | OG-01 | Người thuê khai khu vực, ngân sách, thói quen và ngày sẵn sàng; ngân sách tối đa không nhỏ hơn tối thiểu. | Có |
-| OG-02 | Gửi lời mời kết nối; không gửi trùng lời mời `PENDING` cùng chiều; người nhận đồng ý hoặc từ chối. | Có |
-| OG-03 | `SEARCH_TOGETHER` chỉ kết nối để cùng tìm; không tạo lượt ở. | Có |
-| OG-04 | `JOIN_SYSTEM_ROOM` tạo yêu cầu thêm người khi phòng còn chỗ/hợp đồng còn cho phép, người nhận chưa có lượt ở hoặc yêu cầu trùng. Phải chờ chủ trọ duyệt và xác nhận vào ở. | Có / Sửa |
-| OG-05 | Lời mời của đại diện cũ không tạo được yêu cầu mới sau khi bàn giao; cần đại diện hiện tại gửi/đồng ý lại. | Mới |
+| OG-02 | Mỗi cặp người chỉ có một lời mời đang chờ hoặc kết nối chưa kết thúc, bất kể chiều gửi. Người nhận chấp nhận hoặc từ chối; gửi lời mời ngược chiều không tự chấp nhận. | Sửa |
+| OG-03 | Chấp nhận lời mời chỉ ghi nhận kết nối và chuyển ngay sang màn hình tin nhắn đúng người. Có thể mở lại bằng nút “Nhắn tin”; bấm lại không tạo cuộc chat trùng. | Sửa |
+| OG-04 | Cả `SEARCH_TOGETHER`, `JOIN_SYSTEM_ROOM` và ngữ cảnh khác đều không tự tạo yêu cầu thuê, giữ chỗ, lượt ở hoặc đồng thuận thuê chung khi chấp nhận kết nối. Thuê chung là quy trình riêng sau khi trao đổi; màn hình kết nối hiện chưa có form tạo yêu cầu thuê mới. | Sửa |
+| OG-05 | Người từng là đại diện vẫn có thể kết nối và nhắn tin sau khi rời phòng. Khi thực sự đề nghị vào ở, phải thu đồng ý riêng của đại diện hiện tại; lời mời của đại diện cũ không thay thế đồng ý này. | Sửa |
 | OG-06 | Danh sách “người phù hợp” trong demo là dữ liệu mẫu; chưa có thuật toán ghép cặp. SQL có hồ sơ/thói quen và các tình trạng chỗ ở, UI mới mô phỏng một phần. | Thiết kế |
+| OG-07 | Trong danh sách lời mời có “Xem hồ sơ”: tên, khu vực, ngân sách, thói quen, ngày sẵn sàng và tình trạng chỗ ở được chia sẻ. Không hiển thị căn cước hoặc ngày sinh từ hồ sơ cư trú. Có thể chấp nhận/từ chối ngay trong hộp hồ sơ. | Mới |
+| OG-08 | Có danh sách lời mời nhận và đã gửi, trạng thái chờ/đã kết nối/từ chối/hủy. Hồ sơ và cuộc chat đã kết nối có thể mở lại từ danh sách. | Mới |
+
+#### Kết nối, trò chuyện và CSDL
+
+Luồng hiện tại: **gửi lời mời → xem hồ sơ → chấp nhận kết nối → mở chat → trao đổi → quyết định thuê chung riêng**. Phòng đầy, hợp đồng đã kết thúc hoặc người gửi đã rời phòng không ngăn việc kết nối với người đó. Các điều kiện hợp đồng, sức chứa và đại diện chỉ áp dụng khi tạo/duyệt yêu cầu vào ở thực sự.
+
+Không cần đổi cấu trúc SQL cho luồng kết nối này: đã có `roommate_requests`, `conversations.type = 'ROOMMATE'`, `conversation_participants` và `chat_messages`. `roommate_requests.scenario`/`target_contract_id` chỉ thể hiện ngữ cảnh giới thiệu; `status = 'ACCEPTED'` biểu thị đồng ý kết nối, không phải đồng ý thuê. `occupant_join_requests` vẫn tách riêng và phải có bằng chứng đồng ý thuê của hai bên.
+
+Khi triển khai API, trong một giao dịch phải khóa và kiểm tra lời mời, xác nhận người nhận đang đăng nhập, cập nhật `ACCEPTED`/`responded_at`, tạo hoặc lấy lại conversation theo unique `roommate_request_id`, rồi thêm đúng hai người vào `conversation_participants`. Kiểm tra thành viên và trạng thái kết nối khi gửi tin. Không tự chép trạng thái chấp nhận lời mời sang các cột đồng thuận thuê. Wireframe chỉ mô phỏng giao dịch này trong `localStorage`, chưa có API chat thật.
 
 ### 1.11. Đánh giá, báo cáo, quản trị và thông báo
 
@@ -325,6 +336,8 @@ Giữ nguyên khóa `localStorage` để không xóa thao tác đã thử. Ngư�
 
 Các yêu cầu cũ đang `APPROVED` nhưng không có hạn giữ chỗ được chuyển `EXPIRED`; cần duyệt lại bằng một yêu cầu mới. Có thể bắt đầu lại toàn bộ dữ liệu mẫu qua `__troday.reset()` trong console nếu chỉ cần thử bản mới.
 
+Kết nối đã chấp nhận từ demo cũ có thể mở chat bằng nút “Nhắn tin” mà không cần chấp nhận lại. Khi chấp nhận một lời mời cũ bị gửi chéo, giữ một kết nối và hủy lời mời đang chờ trùng cặp. Những yêu cầu thuê đã tạo từ logic cũ được giữ để đối soát, không tự xóa hoặc tự suy đoán lại đồng thuận.
+
 ## 7. Giới hạn đối chiếu
 
 Sửa các lỗi trên không đồng nghĩa wireframe đã thay thế backend hoặc tuân thủ toàn bộ v5. Dữ liệu JavaScript vẫn rút gọn các phiên bản/xác nhận/snapshot so với SQL; dữ liệu demo cũ có thể thiếu trường bắt buộc. Luồng chat gộp nhiều bài đăng/phòng trong một hội thoại cũng vẫn là khác biệt đã ghi trong README: cần nhóm các conversation v5 ở lớp ứng dụng, hoặc thiết kế lại ngữ cảnh chat nếu muốn lưu trực tiếp theo mô hình UI.
@@ -333,7 +346,7 @@ Sửa các lỗi trên không đồng nghĩa wireframe đã thay thế backend h
 
 Chạy `npm test` trong thư mục wireframe. Bộ kiểm thử gọi các handler thực tế với đồng hồ cố định, bao phủ sức chứa, giữ chỗ, trạng thái hợp đồng, vào ở theo nhóm/từng người, chuyển phòng không cập nhật dở dang, lịch UTC+7 và hủy/rút ý định.
 
-Kết quả sau bổ sung bàn giao: 35/35 tình huống đạt. Đạt cả với múi giờ thiết bị Los Angeles. Có kiểm tra chọn một/nhiều người, thiếu đồng thuận, ứng viên không hợp lệ, dữ liệu thay đổi trước khi gửi, gửi lặp, nhiều lần bàn giao, lưu lại sau tải trang, giữ hóa đơn/phiên bản cũ và giữ người xem ban đầu. Kiểm tra trình duyệt bằng `npm run test:browser` (Node 22+, Chrome cài tại đường dẫn mặc định hoặc cấu hình `CHROME_PATH`) cũng đạt: bàn giao Mai → Ngọc, xem lịch sử, thao tác qua nút/form thật, hợp đồng hai người, bố cục di động, lịch UTC+7 khi trình duyệt đặt múi giờ Los Angeles, hủy lịch và rút ý định; không có lỗi JavaScript khi chạy các luồng đó. Các kiểm tra JavaScript/Chrome này độc lập với bộ kiểm thử MySQL bên dưới.
+Kết quả sau bổ sung chat kết nối: 41/41 tình huống đạt, cả với múi giờ thiết bị Los Angeles. Có kiểm tra bàn giao đại diện, giữ hóa đơn/phiên bản/người xem ban đầu, chỉ kết nối không tạo đồng thuận thuê, chặn lời mời chéo, quyền người nhận, gửi tin và giữ lịch sử sau tải lại, mở hồ sơ và không lộ thông tin căn cước. Kiểm tra trình duyệt bằng `npm run test:browser` (Node 22+, Chrome cài tại đường dẫn mặc định hoặc cấu hình `CHROME_PATH`) cũng đạt: thao tác nút/form thật, bàn giao, hợp đồng hai người, lịch UTC+7, hủy/rút ý định, xem hồ sơ người gửi, chấp nhận để mở đúng chat, gửi tin, khôi phục từ localStorage và bố cục di động; không có lỗi JavaScript khi chạy các luồng đó. Các kiểm tra JavaScript/Chrome này độc lập với bộ kiểm thử MySQL bên dưới.
 
 Chạy `npm run test:database` để tạo instance MySQL tạm riêng và kiểm tra SQL. **22/22 kiểm tra tích hợp đạt trên MySQL 8.0.42**, gồm tạo mới 40 bảng, nâng cấp v5 gốc, tính tương đương cột/FK của hai cách tạo, bàn giao trên hợp đồng nhập giấy và thuê mới, người vào sau ngày kích hoạt tiếp quản, lịch sử không bị ghi đè, giữ hóa đơn/phiên bản cũ, vào ở theo nhóm/từng người, kết thúc/đổi phòng đầy đủ, lịch xem UTC và rút ý định. Đã kiểm tra hai phiên duyệt cùng tranh chỗ cuối chỉ một phiên thành công; migration từ chối dữ liệu vượt sức chứa hoặc bản nháp trùng phòng trước khi đổi cấu trúc. Thủ tục cũng từ chối giao dịch lồng mà không commit/rollback nhầm giao dịch của bên gọi.
 

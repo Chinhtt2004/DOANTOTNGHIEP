@@ -99,6 +99,11 @@ const seed = {
   changeRequests: [{ id: "chg1", contractId: "k2", type: "RENEWAL", status: "PENDING", requestedBy: "mai", effective: "2027-06-01", note: "Mong gia hạn thêm 12 tháng." }],
   joinRequests: [{ id: "join1", contractId: "k2", applicantId: "bao", requestedBy: "mai", status: "PENDING_LANDLORD", date: "2026-10-23", representativeConsent: true, applicantConsent: true }],
   roommateProfile: { location: "Cầu Giấy, Thanh Xuân", budgetMin: 3000000, budgetMax: 5000000, habits: "Không hút thuốc · Giờ giấc ổn định", available: "2026-11-01" },
+  roommateProfiles: {
+    bao: { location: "Cầu Giấy", budgetMin: 3000000, budgetMax: 5000000, habits: "Không hút thuốc · Muốn cùng tìm phòng", available: "2026-11-01" },
+    ngoc: { location: "Thanh Xuân", budgetMin: 2000000, budgetMax: 3500000, habits: "Ưu tiên không hút thuốc · Giữ vệ sinh chung", available: "2026-11-01" },
+    mai: { location: "Cầu Giấy", budgetMin: 2000000, budgetMax: 3000000, habits: "Giờ giấc ổn định · Muốn trao đổi trước khi ở chung", available: "2026-11-01" }
+  },
   roommateInvites: [{ id: "rm1", senderId: "bao", receiverId: "lan", status: "PENDING", scenario: "SEARCH_TOGETHER", note: "Mình đang tìm phòng khu Cầu Giấy, bạn cùng tìm nhé?" }, { id: "rm2", senderId: "mai", receiverId: "lan", status: "PENDING", scenario: "JOIN_SYSTEM_ROOM", contractId: "k2", note: "Phòng P305 còn một chỗ, bạn muốn ở cùng không?" }],
   invoices: [
     { id: "i1", code: "INV-2026-10-018", contractId: "k2", period: "2026-10-01", due: "2026-10-05", status: "UNPAID", payerId: "mai", items: [{ name: "Tiền phòng", quantity: 1, unit: "tháng", price: 5400000 }, { name: "Điện", quantity: 55, unit: "kWh", price: 3800 }, { name: "Nước", quantity: 4, unit: "m³", price: 28000 }, { name: "Internet", quantity: 1, unit: "phòng", price: 100000 }] },
@@ -236,6 +241,7 @@ function renderDetail() {
 function visibleConversations() { return state.conversations.filter((c) => c.users.includes(userId())); }
 function otherUser(conversation) { return conversation.users.find((id) => id !== userId()); }
 function chatRoomChoices(conversation) {
+  if (conversation.type === "ROOMMATE") return [];
   const fromMessages = conversation.messages.map((m) => m.roomId).filter(Boolean);
   const selected = state.chatContext;
   const current = selected && room(selected) && conversation.users.includes(house(room(selected).houseId).ownerId) ? [selected] : [];
@@ -273,6 +279,7 @@ function renderChats() {
   state.selectedConversation = current.id;
   if (Object.hasOwn(state.chatContexts, chatDraftKey(current.id))) state.chatContext = state.chatContexts[chatDraftKey(current.id)];
   const peer = otherUser(current);
+  const isRoommate = current.type === "ROOMMATE";
   const me = userId();
   let previousRoom = null;
   const messages = current.messages.map((m) => {
@@ -284,7 +291,7 @@ function renderChats() {
   const choices = chatRoomChoices(current);
   const activeRoom = choices.includes(state.chatContext) ? room(state.chatContext) : null;
   const draft = state.chatDrafts[chatDraftKey(current.id)] || "";
-  return head("Tin nhắn", "Trao đổi với từng người và theo dõi ngữ cảnh từng phòng") +
+  return head("Tin nhắn", "Trao đổi với chủ trọ và những người đã kết nối") +
     `<div class="chat-shell ${state.chatMobileOpen ? "thread-open" : ""}">
       <section class="chat-contacts">
         <div class="chat-contact-head"><h2>Hội thoại</h2>${chip(String(conversations.length), "green")}</div>
@@ -298,18 +305,18 @@ function renderChats() {
       <section class="chat-pane" aria-label="Hội thoại với ${esc(person(peer).name)}">
         <div class="chat-pane-head">
           <button type="button" class="icon-button mobile-back" data-action="back-chats" aria-label="Danh sách hội thoại">${icon("arrow-left")}</button>
-          ${avatar(peer)}<div class="head-copy"><h2>${esc(person(peer).name)}</h2><small>${choices.length} phòng đã trao đổi</small></div>
-          ${button(`${icon("calendar-plus")} Hẹn xem`, "open-appointment", "", "small", state.role !== "landlord" ? "disabled title=\"Chủ trọ tạo lịch hẹn\"" : "")}
+          ${avatar(peer)}<div class="head-copy"><h2>${esc(person(peer).name)}</h2><small>${isRoommate ? "Đã kết nối · Trao đổi ở ghép" : `${choices.length} phòng đã trao đổi`}</small></div>
+          ${isRoommate ? button("Xem hồ sơ", "roommate-profile", peer, "small") : button(`${icon("calendar-plus")} Hẹn xem`, "open-appointment", "", "small", state.role !== "landlord" ? "disabled title=\"Chủ trọ tạo lịch hẹn\"" : "")}
         </div>
-        <div class="chat-pane-body" role="log" aria-label="Nội dung hội thoại"><div class="message-date">Hội thoại gần đây</div>${messages}</div>
+        <div class="chat-pane-body" role="log" aria-label="Nội dung hội thoại">${isRoommate ? '<p class="connection-note">Hai bạn đã kết nối để trao đổi. Việc thuê chung cần được thỏa thuận và xác nhận riêng.</p>' : '<div class="message-date">Hội thoại gần đây</div>'}${messages || (isRoommate ? '<p class="muted tiny">Gửi lời chào để bắt đầu cuộc trò chuyện.</p>' : "")}</div>
         <form class="chat-composer" data-form="chat-message" aria-label="Soạn tin nhắn">
-          <div class="chat-room-picker">
+          ${!isRoommate ? `<div class="chat-room-picker">
             <label for="chat-room-context">Trao đổi về</label>
             <select id="chat-room-context" data-change="chat-context" aria-label="Chọn phòng trao đổi" ${choices.length ? "" : "disabled"}>
               <option value="" ${activeRoom ? "" : "selected"}>Trao đổi chung</option>
               ${choices.map((id) => { const r = room(id); return `<option value="${esc(id)}" ${activeRoom?.id === id ? "selected" : ""}>${esc(r.code)} · ${esc(r.title)}</option>`; }).join("")}
             </select>
-          </div>
+          </div>` : ""}
           ${activeRoom ? `<div class="composer-context"><span>Đang hỏi về <strong>${esc(activeRoom.code)} · ${esc(activeRoom.title)}</strong></span><button type="button" class="inline-action" data-action="clear-context">Bỏ chọn</button></div>` : ""}
           <div class="chat-compose-row">
             <textarea id="chat-message" name="message" rows="1" maxlength="2000" required placeholder="Nhập tin nhắn..." aria-label="Nội dung tin nhắn" aria-describedby="chat-composer-help">${esc(draft)}</textarea>
@@ -319,8 +326,8 @@ function renderChats() {
         </form>
       </section>
       <aside class="chat-context">
-        <div class="chat-context-head"><h2>Phòng đã trao đổi</h2></div>
-        <div class="chat-context-list">${choices.map((id) => {
+        <div class="chat-context-head"><h2>${isRoommate ? "Người đã kết nối" : "Phòng đã trao đổi"}</h2></div>
+        <div class="chat-context-list">${isRoommate ? `<strong>${esc(person(peer).name)}</strong>${roommateProfileSummary(peer)}${button("Xem hồ sơ", "roommate-profile", peer, "small")}` : choices.map((id) => {
           const r = room(id);
           return `<button type="button" class="context-choice ${state.chatContext === id ? "active" : ""}" data-action="select-context" data-id="${id}"><img src="${esc(r.photo)}" alt=""><span><strong>${esc(r.code)} · ${esc(r.title)}</strong><small>${shortMoney(r.price)}/tháng</small></span></button>`;
         }).join("")}</div>
@@ -438,12 +445,47 @@ function renderInvoices() {
     `<div class="split-grid"><div><div class="table-surface table-scroll">${own.length ? `<table><thead><tr><th>Mã hóa đơn</th><th>Phòng / kỳ</th><th>Hạn thanh toán</th><th>Tổng</th><th>Trạng thái</th><th></th></tr></thead><tbody>${own.map((i) => `<tr><td class="cell-title">${esc(i.code)}</td><td>${esc(room(contract(i.contractId).roomId).code)}<span class="cell-sub">${monthLabel(i.period)}</span></td><td>${dateLabel(i.due)}</td><td class="strong">${money(totalInvoice(i))}</td><td>${chip(i.status === "PAID" ? "Đã thu" : i.status === "UNPAID" ? "Chưa thu" : i.status === "DRAFT" ? "Bản nháp" : "Đã hủy", i.status === "PAID" ? "green" : i.status === "UNPAID" ? "orange" : "gray")}</td><td class="actions-cell">${button("Chi tiết", "invoice-detail", i.id, "small")}</td></tr>`).join("")}</tbody></table>` : empty("Chưa có hóa đơn", "Hóa đơn theo hợp đồng sẽ xuất hiện tại đây.")}</div></div>${selected ? `<aside><div class="section-bar" style="margin-top:0"><h2>${esc(selected.code)}</h2>${chip(selected.status === "PAID" ? "Đã thu" : selected.status === "UNPAID" ? "Chưa thu" : "Bản nháp", selected.status === "PAID" ? "green" : "orange")}</div><div class="flat-surface"><div class="invoice-detail"><div><span>Phòng</span><strong>${esc(roomName(selectedContract.roomId))}</strong></div><div><span>Kỳ thu</span><strong>${monthLabel(selected.period)}</strong></div><div><span>Người trả</span><strong>${esc(person(selected.payerId).name)}</strong></div><div><span>Hạn thanh toán</span><strong>${dateLabel(selected.due)}</strong></div></div><div class="table-scroll"><table><thead><tr><th>Khoản</th><th>Số lượng</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead><tbody>${selected.items.map((item) => `<tr><td>${esc(item.name)}</td><td>${item.quantity} ${esc(item.unit)}</td><td>${money(item.price)}</td><td>${money(item.quantity * item.price)}</td></tr>`).join("")}</tbody></table></div><div class="total-line"><span>Tổng cần thanh toán</span><strong>${money(totalInvoice(selected))}</strong></div></div>${state.role === "landlord" ? `<div class="heading-actions" style="margin-top:12px">${selected.status === "DRAFT" ? button("Phát hành", "issue-invoice", selected.id, "primary") : ""}${selected.status === "UNPAID" ? `${button("Xác nhận đã thu", "pay-invoice", selected.id, "primary")}${button("Hủy hóa đơn", "cancel-invoice", selected.id, "danger")}` : ""}</div>` : ""}</aside>` : ""}</div>`;
 }
 
+function roommateProfileFor(id) {
+  return id === "lan" ? state.roommateProfile || seed.roommateProfile : state.roommateProfiles?.[id] || seed.roommateProfiles[id];
+}
+function roommateProfileSummary(id) {
+  const profile = roommateProfileFor(id);
+  if (!profile) return '<p class="muted tiny">Người này chưa cập nhật tiêu chí ở ghép.</p>';
+  const current = state.contracts.find((c) => c.members.some((m) => m.tenantId === id && m.status === "ACTIVE"));
+  return `<div class="list-row"><div><strong>Khu vực</strong><small>${esc(profile.location)}</small></div></div><div class="list-row"><div><strong>Ngân sách / tháng</strong><small>${shortMoney(profile.budgetMin)}–${shortMoney(profile.budgetMax)}</small></div></div><div class="list-row"><div><strong>Thói quen / mong muốn</strong><small>${esc(profile.habits)}</small></div></div><div class="list-row"><div><strong>Sẵn sàng từ</strong><small>${dateLabel(profile.available)}</small></div></div><div class="list-row"><div><strong>Tình trạng chỗ ở</strong><small>${current ? `Đang ở ${esc(roomName(current.roomId))}` : "Đang tìm người trao đổi về chỗ ở"}</small></div></div>`;
+}
+function sameRoommatePair(invite, first, second) {
+  return first !== second && [first, second].includes(invite.senderId) && [first, second].includes(invite.receiverId) && invite.senderId !== invite.receiverId;
+}
+function openRoommateInvite(peer) {
+  const candidates = state.roommateInvites.filter((x) => sameRoommatePair(x, userId(), peer) && !x.endedAt);
+  return candidates.find((x) => x.status === "ACCEPTED") || candidates.find((x) => x.status === "PENDING");
+}
+function roommateConnectionAction(peer) {
+  const invite = openRoommateInvite(peer);
+  if (invite?.status === "ACCEPTED") return button("Nhắn tin", "chat-roommate", invite.id, "small primary");
+  if (invite?.receiverId === userId()) return button("Chấp nhận kết nối", "accept-roommate", invite.id, "small primary");
+  if (invite) return button("Đã gửi lời mời", "send-roommate", peer, "small", "disabled");
+  return button("Kết nối", "send-roommate", peer, "small");
+}
+function openRoommateProfile(id) {
+  if (state.role !== "tenant" || !PEOPLE[id] || id === userId()) return;
+  const invite = openRoommateInvite(id);
+  modal("Hồ sơ ở ghép", `<div class="account-row">${avatar(id)}<div class="account-copy"><strong>${esc(person(id).name)}</strong><small>Thông tin chia sẻ để tìm người ở ghép</small></div></div>${roommateProfileSummary(id)}<p class="muted tiny">Chấp nhận kết nối để nhắn tin tìm hiểu. Thuê chung cần thỏa thuận riêng.</p><div class="form-actions">${button("Đóng", "close-dialog")}${invite?.status === "PENDING" && invite.receiverId === userId() ? button("Từ chối", "reject-roommate", invite.id) : ""}${roommateConnectionAction(id)}</div>`);
+}
 function renderRoommates() {
-  const incoming = state.roommateInvites.filter((x) => x.receiverId === "lan");
-  const matches = ["bao", "ngoc", "mai"];
-  const profile = state.roommateProfile || seed.roommateProfile;
-  return head("Tìm người ở ghép", "Hồ sơ và lời mời kết nối", button(`${icon("sliders-horizontal")} Sửa tiêu chí`, "edit-roommate-profile")) +
-    `<div class="split-grid"><div><div class="section-bar" style="margin-top:0"><h2>Người phù hợp</h2></div><div class="flat-surface" style="padding:0 16px">${matches.map((id, index) => `<div class="list-row">${avatar(id)}<div style="flex:1"><strong>${esc(person(id).name)}</strong><small>${index === 0 ? "Cầu Giấy · Ngân sách 3–5 triệu" : index === 1 ? "Thanh Xuân · Ưu tiên không hút thuốc" : "Đang ở P305 · Tìm thêm bạn ở cùng"}</small></div>${button("Kết nối", "send-roommate", id, "small")}</div>`).join("")}</div><div class="section-bar"><h2>Lời mời dành cho bạn</h2></div><div class="flat-surface" style="padding:0 16px">${incoming.map((item) => `<div class="list-row"><div><strong>${esc(person(item.senderId).name)}</strong><small>${esc(item.note)}${item.contractId ? ` · ${esc(roomName(contract(item.contractId).roomId))}` : ""}</small></div>${item.status === "PENDING" ? `<div class="table-actions">${button("Đồng ý", "accept-roommate", item.id, "small primary")}${button("Từ chối", "reject-roommate", item.id, "small")}</div>` : chip(item.status === "ACCEPTED" ? "Đã kết nối" : "Đã từ chối", item.status === "ACCEPTED" ? "green" : "gray")}</div>`).join("")}</div></div><aside><div class="subtle-panel"><h3>Hồ sơ ở ghép của bạn</h3><div class="list-row"><div><strong>Khu vực</strong><small>${esc(profile.location)}</small></div></div><div class="list-row"><div><strong>Ngân sách</strong><small>${shortMoney(profile.budgetMin)}–${shortMoney(profile.budgetMax)}/tháng</small></div></div><div class="list-row"><div><strong>Thói quen</strong><small>${esc(profile.habits)}</small></div></div><div class="list-row"><div><strong>Sẵn sàng từ</strong><small>${dateLabel(profile.available)}</small></div></div></div></aside></div>`;
+  const me = userId();
+  const incoming = state.roommateInvites.filter((x) => x.receiverId === me);
+  const outgoing = state.roommateInvites.filter((x) => x.senderId === me);
+  const matches = ["bao", "ngoc", "mai"].filter((id) => id !== me);
+  const invitationList = (items, received) => items.map((item) => {
+    const peer = received ? item.senderId : item.receiverId;
+    const labels = { PENDING: received ? "Chờ bạn phản hồi" : "Chờ phản hồi", ACCEPTED: item.endedAt ? "Đã kết thúc kết nối" : "Đã kết nối", REJECTED: "Đã từ chối", CANCELLED: "Đã hủy" };
+    const actions = item.status === "PENDING" && received ? `${button("Chấp nhận kết nối", "accept-roommate", item.id, "small primary")}${button("Từ chối", "reject-roommate", item.id, "small")}` : item.status === "ACCEPTED" && !item.endedAt ? button("Nhắn tin", "chat-roommate", item.id, "small primary") : "";
+    return `<div class="list-row roommate-row">${avatar(peer)}<div class="roommate-copy"><strong>${esc(person(peer).name)}</strong><small>${esc(item.note)}</small>${chip(labels[item.status] || "Chưa rõ trạng thái", item.status === "ACCEPTED" && !item.endedAt ? "green" : "gray")}</div><div class="table-actions">${button("Xem hồ sơ", "roommate-profile", peer, "small")}${actions}</div></div>`;
+  }).join("") || '<p class="muted tiny">Chưa có lời mời.</p>';
+  return head("Tìm người ở ghép", "Kết nối để trò chuyện và tìm hiểu trước khi quyết định thuê chung", button(`${icon("sliders-horizontal")} Sửa tiêu chí`, "edit-roommate-profile")) +
+    `<div class="split-grid"><div><div class="section-bar" style="margin-top:0"><h2>Người phù hợp</h2></div><div class="flat-surface" style="padding:0 16px">${matches.map((id) => { const profile = roommateProfileFor(id); return `<div class="list-row roommate-row">${avatar(id)}<div class="roommate-copy"><strong>${esc(person(id).name)}</strong><small>${esc(profile?.location)} · ${profile ? `Ngân sách ${shortMoney(profile.budgetMin)}–${shortMoney(profile.budgetMax)}` : "Chưa cập nhật tiêu chí"}</small></div><div class="table-actions">${button("Xem hồ sơ", "roommate-profile", id, "small")}${roommateConnectionAction(id)}</div></div>`; }).join("")}</div><div class="section-bar"><h2>Lời mời dành cho bạn</h2></div><div class="flat-surface" style="padding:0 16px">${invitationList(incoming, true)}</div>${outgoing.length ? `<div class="section-bar"><h2>Lời mời đã gửi</h2></div><div class="flat-surface" style="padding:0 16px">${invitationList(outgoing, false)}</div>` : ""}</div><aside><div class="subtle-panel"><h3>Hồ sơ ở ghép của bạn</h3>${roommateProfileSummary(me)}</div></aside></div>`;
 }
 
 function renderVerifications() {
@@ -683,7 +725,7 @@ function openReportPost(id) { modal("Báo cáo tin đăng", `<form data-form="re
 function openResolveReport(id) { modal("Xử lý báo cáo", `<form data-form="resolve-report"><input type="hidden" name="reportId" value="${esc(id)}"><label class="field">Kết luận<textarea name="resolution" required></textarea></label><div class="form-actions">${button("Hủy", "close-dialog")}<button class="button primary" type="submit">Lưu kết luận</button></div></form>`); }
 function openReview(id) { modal("Đánh giá phòng", `<form data-form="review"><input type="hidden" name="contractId" value="${esc(id)}"><div class="form-grid"><label class="field">Số sao<select name="rating">${[5, 4, 3, 2, 1].map((n) => `<option value="${n}">${n} sao</option>`).join("")}</select></label><label class="field full">Nhận xét<textarea name="content" required placeholder="Trải nghiệm thực tế của bạn..."></textarea></label></div><div class="form-actions">${button("Hủy", "close-dialog")}<button class="button primary" type="submit">Đăng đánh giá</button></div></form>`); }
 function openIdentity() { modal("Gửi hồ sơ căn cước", `<form data-form="identity"><div class="form-grid"><label class="field full">Số căn cước<input name="identity" inputmode="numeric" required maxlength="30"></label><label class="field full">Ảnh giấy tờ<input type="file" name="document" accept="image/*,.pdf" required></label></div><div class="form-actions">${button("Hủy", "close-dialog")}<button class="button primary" type="submit">Gửi kiểm duyệt</button></div></form>`); }
-function openRoommateProfile() {
+function editRoommateProfile() {
   const p = state.roommateProfile || seed.roommateProfile;
   modal("Tiêu chí ở ghép", `<form data-form="roommate-profile"><div class="form-grid"><label class="field full">Khu vực mong muốn<input name="location" value="${esc(p.location)}" required></label><label class="field">Ngân sách từ<input type="number" name="budgetMin" min="0" value="${p.budgetMin}" required></label><label class="field">Đến<input type="number" name="budgetMax" min="0" value="${p.budgetMax}" required></label><label class="field full">Thói quen / yêu cầu<textarea name="habits" required>${esc(p.habits)}</textarea></label><label class="field full">Sẵn sàng từ<input type="date" name="available" value="${p.available}" required></label></div><div class="form-actions">${button("Hủy", "close-dialog")}<button class="button primary" type="submit">Lưu hồ sơ</button></div></form>`);
 }
@@ -821,13 +863,18 @@ function handleAction(action, id) {
     case "issue-invoice": item = byId(state.invoices, id); if (item?.status === "DRAFT" && item.items.length) { item.status = "UNPAID"; finish("Hóa đơn đã phát hành, các dòng tiền được giữ cố định."); } return;
     case "pay-invoice": item = byId(state.invoices, id); if (item?.status === "UNPAID") { item.status = "PAID"; finish("Đã xác nhận thu tiền."); } return;
     case "cancel-invoice": item = byId(state.invoices, id); if (item?.status === "UNPAID") modal("Hủy hóa đơn", `<form data-form="cancel-invoice"><input type="hidden" name="invoiceId" value="${id}"><label class="field">Lý do hủy<textarea name="reason" required></textarea></label><div class="form-actions">${button("Quay lại", "close-dialog")}<button type="submit" class="button danger">Hủy hóa đơn</button></div></form>`); return;
-    case "edit-roommate-profile": openRoommateProfile(); return;
+    case "edit-roommate-profile": editRoommateProfile(); return;
+    case "roommate-profile": openRoommateProfile(id); return;
+    case "chat-roommate": openRoommateChat(id); return;
     case "send-roommate": {
-      if (state.roommateInvites.some((x) => x.senderId === "lan" && x.receiverId === id && x.status === "PENDING")) { flash("Bạn đã gửi lời mời cho người này."); return; }
-      state.roommateInvites.push({ id: `rm${Date.now()}`, senderId: "lan", receiverId: id, status: "PENDING", scenario: "SEARCH_TOGETHER", note: "Mình muốn trao đổi về việc ở ghép." }); finish("Đã gửi lời mời kết nối."); return;
+      if (state.role !== "tenant" || id === userId() || !roommateProfileFor(id)) return;
+      const existing = openRoommateInvite(id);
+      if (existing?.status === "ACCEPTED") { openRoommateChat(existing.id); return; }
+      if (existing) { flash(existing.senderId === userId() ? "Bạn đã gửi lời mời cho người này." : "Người này đã gửi lời mời. Hãy xem hồ sơ và phản hồi lời mời hiện có."); return; }
+      state.roommateInvites.push({ id: `rm-${userId()}-${id}-${Date.now()}-${state.roommateInvites.length}`, senderId: userId(), receiverId: id, status: "PENDING", scenario: "SEARCH_TOGETHER", note: "Mình muốn kết nối để trò chuyện và tìm hiểu về việc ở ghép." }); finish("Đã gửi lời mời kết nối."); return;
     }
     case "accept-roommate": acceptRoommate(id); return;
-    case "reject-roommate": item = byId(state.roommateInvites, id); if (item) { item.status = "REJECTED"; finish("Đã từ chối lời mời."); } return;
+    case "reject-roommate": item = byId(state.roommateInvites, id); if (state.role === "tenant" && item?.status === "PENDING" && item.receiverId === userId()) { item.status = "REJECTED"; item.respondedAt = new Date().toISOString(); finish("Đã từ chối lời mời."); } return;
     case "approve-verification": item = byId(state.verifications, id); if (item) { item.status = "APPROVED"; logAudit("APPROVE_VERIFICATION", person(item.userId).name, "Hồ sơ hợp lệ"); finish("Đã duyệt hồ sơ xác minh."); } return;
     case "reject-verification": openModerationReason("reject-verification", id); return;
     case "report-post": openReportPost(id); return;
@@ -905,18 +952,34 @@ function moveOut(value) {
   syncRoomStatus(c.roomId);
   finish("Đã ghi nhận ngày rời phòng.");
 }
+function openRoommateChat(id) {
+  const invite = byId(state.roommateInvites, id);
+  if (state.role !== "tenant" || !invite || invite.status !== "ACCEPTED" || invite.endedAt || ![invite.senderId, invite.receiverId].includes(userId()) || invite.senderId === invite.receiverId) return;
+  let conversation = state.conversations.find((c) => c.type === "ROOMMATE" && c.roommateRequestId === invite.id && c.users.length === 2 && c.users.includes(invite.senderId) && c.users.includes(invite.receiverId));
+  if (!conversation) {
+    conversation = { id: `c-roommate-${invite.id}`, type: "ROOMMATE", roommateRequestId: invite.id, users: [invite.senderId, invite.receiverId], messages: [] };
+    state.conversations.push(conversation);
+  }
+  state.selectedConversation = conversation.id;
+  state.chatContext = null; state.chatContexts[chatDraftKey(conversation.id)] = null;
+  state.chatMobileOpen = true; state.view = "chats"; state.tab = "all"; state.selectedRoom = null;
+  closeDialog(); save(); render(); window.scrollTo(0, 0);
+}
 function acceptRoommate(id) {
   const invite = byId(state.roommateInvites, id);
-  if (!invite || invite.status !== "PENDING" || invite.receiverId !== userId()) return;
-  if (invite.scenario === "JOIN_SYSTEM_ROOM" && invite.contractId) {
-    const c = contract(invite.contractId);
-    if (c && invite.senderId !== c.tenantId) { flash("Lời mời thuộc đại diện cũ. Cần đại diện hiện tại gửi lời mời và đồng ý lại."); return; }
-    if (!c || c.status !== "ACTIVE" || representative(c)?.status !== "ACTIVE" || todayISO() < c.start || todayISO() > c.end || roomLoad(c.roomId) >= room(c.roomId).capacity) { flash("Phòng không còn chỗ hoặc hợp đồng không còn cho phép thêm người."); return; }
-    if (hasActiveAccount(userId()) || c.members.some((m) => m.tenantId === userId() && ["PLANNED", "ACTIVE"].includes(m.status)) || state.joinRequests.some((j) => j.contractId === c.id && j.applicantId === userId() && ["PENDING_CONSENT", "PENDING_LANDLORD", "APPROVED"].includes(j.status))) { flash("Bạn đã có lượt ở hoặc yêu cầu đang mở."); return; }
-    state.joinRequests.push({ id: `join${Date.now()}`, contractId: c.id, applicantId: userId(), requestedBy: invite.senderId, sourceRoommateRequestId: invite.id, status: "PENDING_LANDLORD", date: todayISO(), representativeConsent: true, applicantConsent: true });
+  if (state.role !== "tenant" || !invite || invite.receiverId !== userId() || invite.senderId === invite.receiverId || invite.endedAt || !["PENDING", "ACCEPTED"].includes(invite.status)) return;
+  const timestamp = new Date().toISOString();
+  const accepted = state.roommateInvites.find((x) => x.id !== invite.id && x.status === "ACCEPTED" && !x.endedAt && sameRoommatePair(x, invite.senderId, invite.receiverId));
+  const connection = accepted || invite;
+  if (!accepted && invite.status === "PENDING") { invite.status = "ACCEPTED"; invite.respondedAt = timestamp; }
+  // Old demos may contain invitations in both directions. Keep one open connection.
+  for (const other of state.roommateInvites) {
+    if (other.id !== connection.id && other.status === "PENDING" && sameRoommatePair(other, invite.senderId, invite.receiverId)) {
+      other.status = "CANCELLED"; other.respondedAt = timestamp;
+    }
   }
-  invite.status = "ACCEPTED";
-  finish(invite.scenario === "JOIN_SYSTEM_ROOM" ? "Đã gửi yêu cầu vào ở cho chủ trọ duyệt." : "Đã kết nối để tìm phòng cùng nhau.");
+  // Connection consent only opens messaging; it never supplies rental consent or reserves a place.
+  openRoommateChat(connection.id);
 }
 
 function exportResidents() {
@@ -946,7 +1009,11 @@ function handleForm(form) {
       const text = value("message");
       if (!c || !c.users.includes(userId()) || !text) return;
       if (text.length > 2000) { flash("Tin nhắn tối đa 2.000 ký tự."); return; }
-      const r = room(state.chatContext);
+      if (c.type === "ROOMMATE") {
+        const invite = byId(state.roommateInvites, c.roommateRequestId);
+        if (!invite || invite.status !== "ACCEPTED" || invite.endedAt || c.users.length !== 2 || !c.users.includes(invite.senderId) || !c.users.includes(invite.receiverId)) { flash("Cần có kết nối được chấp nhận để nhắn tin."); return; }
+      }
+      const r = c.type === "ROOMMATE" ? null : room(state.chatContext);
       if (r && !c.users.includes(house(r.houseId).ownerId)) { flash("Phòng này không thuộc chủ trọ trong hội thoại."); return; }
       const now = new Date();
       c.messages.push({ id: `m${Date.now()}`, senderId: userId(), roomId: r?.id || null, text, time: now.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) });

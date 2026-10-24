@@ -13,7 +13,7 @@ function demo(savedState) {
   }
   const nodes = new Map();
   const node = (selector) => {
-    if (!nodes.has(selector)) nodes.set(selector, { innerHTML: "", textContent: "", style: {}, classList: { add() {}, remove() {}, toggle() {} }, open: false, showModal() { this.open = true; }, close() { this.open = false; }, focus() {} });
+    if (!nodes.has(selector)) nodes.set(selector, { innerHTML: "", textContent: "", value: "", scrollHeight: 42, form: { querySelector: () => ({ disabled: false }) }, style: {}, classList: { add() {}, remove() {}, toggle() {} }, open: false, showModal() { this.open = true; }, close() { this.open = false; }, focus() {} });
     return nodes.get(selector);
   };
   const storage = new Map(savedState ? [["troday-wireframe-v5-20261023", JSON.stringify(savedState)]] : []);
@@ -122,12 +122,14 @@ test("the final successor's departure closes their tenure without losing earlier
   assert.equal(k2(d).representativeHistory[1].toAt, "2026-10-24T04:00:00.000Z");
   assert.equal(JSON.stringify(k2(d).representativeHistory[0]), first);
 });
-test("an old representative's roommate invitation cannot reuse their consent after handover", () => {
+test("an old representative's invitation can connect without reusing rental consent after handover", () => {
   const d = demo(); d.submit("representative-handover", { contractId: "k2", departingId: "o2", successorId: "o3", reason: "Bàn giao", consent: "yes" });
   d.state.role = "tenant"; const before = d.state.joinRequests.length;
   d.action("accept-roommate", "rm2");
   assert.equal(d.state.joinRequests.length, before);
-  assert.match(d.node("#toast").textContent, /đại diện cũ/);
+  assert.equal(byId(d.state.roommateInvites, "rm2").status, "ACCEPTED");
+  assert.equal(d.state.view, "chats");
+  assert.ok(d.state.conversations.find((c) => c.id === d.state.selectedConversation).users.includes("mai"));
 });
 test("new-rental handover preserves the original viewing tenant", () => {
   const d = demo(); const c = byId(d.state.contracts, "k1");
@@ -293,4 +295,104 @@ test("new contract rejects more initial members than the room allows", () => {
   const count = d.state.contracts.length;
   d.submit("create-contract", { viewingId: "v2", start: "2026-10-24", end: "2027-10-24", rent: "4200000", deposit: "4200000", members: "A, 123\nB, 456\nC, 789", terms: "Thỏa thuận" });
   assert.equal(d.state.contracts.length, count);
+});
+
+test("accepting a connection opens a two-person chat without creating rental consent or occupancy", () => {
+  for (const inviteId of ["rm1", "rm2"]) {
+    const d = demo(); d.state.role = "tenant";
+    // Even a full room and closed contract must not block connecting to a person.
+    k2(d).status = "TERMINATED"; byId(d.state.rooms, "r3").capacity = 2;
+    d.api.render();
+    const before = JSON.stringify({ contracts: d.state.contracts, joins: d.state.joinRequests, rooms: d.state.rooms });
+    d.action("accept-roommate", inviteId);
+    const invite = byId(d.state.roommateInvites, inviteId);
+    assert.equal(invite.status, "ACCEPTED"); assert.ok(invite.respondedAt);
+    assert.equal(d.state.view, "chats"); assert.equal(d.state.chatMobileOpen, true); assert.equal(d.state.chatContext, null);
+    const conversation = byId(d.state.conversations, d.state.selectedConversation);
+    assert.equal(conversation.type, "ROOMMATE"); assert.equal(conversation.roommateRequestId, invite.id);
+    assert.deepEqual(Array.from(conversation.users).sort(), [invite.senderId, invite.receiverId].sort());
+    assert.equal(conversation.messages.length, 0);
+    assert.equal(JSON.stringify({ contracts: d.state.contracts, joins: d.state.joinRequests, rooms: d.state.rooms }), before);
+    assert.doesNotMatch(d.node("#app-main").innerHTML, /Hẹn xem|id="chat-room-context"/);
+  }
+});
+
+test("accepted connections send messages without inheriting room context and survive reload", () => {
+  const d = demo(); d.state.role = "tenant"; d.action("accept-roommate", "rm1");
+  const id = d.state.selectedConversation; const conversation = byId(d.state.conversations, id);
+  d.state.chatContext = "r2";
+  d.submit("chat-message", { message: "Chào Bảo, mình muốn tìm hiểu thêm trước khi quyết định." });
+  assert.equal(conversation.messages.length, 1); assert.equal(conversation.messages[0].roomId, null);
+  assert.equal(conversation.messages[0].senderId, "lan");
+  conversation.messages.push({ id: "reply", senderId: "bao", roomId: null, text: "Chào Lan, mình cùng trao đổi nhé.", time: "10:01" });
+  d.state.chatDrafts["lan:" + id] = "Bạn muốn tìm khu vực nào?";
+  d.action("chat-roommate", "rm1");
+  assert.match(d.node("#app-main").innerHTML, /Chào Bảo/); assert.match(d.node("#app-main").innerHTML, /Chào Lan/);
+  assert.equal(d.state.chatDrafts["lan:" + id], "Bạn muốn tìm khu vực nào?");
+  const restored = demo(d.state); restored.state.role = "tenant"; restored.action("chat-roommate", "rm1");
+  assert.equal(restored.state.selectedConversation, id);
+  assert.equal(restored.state.conversations.filter((c) => c.roommateRequestId === "rm1").length, 1);
+  assert.equal(byId(restored.state.conversations, id).messages.length, 2);
+  const count = restored.state.conversations.length;
+  restored.action("accept-roommate", "rm1"); restored.action("send-roommate", "bao");
+  assert.equal(restored.state.conversations.length, count);
+});
+
+test("only the recipient accepts or rejects and only connected participants can open or send", () => {
+  const d = demo(); const before = JSON.stringify(d.state.roommateInvites);
+  d.action("accept-roommate", "rm1"); d.action("reject-roommate", "rm1");
+  assert.equal(JSON.stringify(d.state.roommateInvites), before);
+  d.state.role = "tenant";
+  d.action("chat-roommate", "rm1");
+  assert.equal(d.state.conversations.some((c) => c.type === "ROOMMATE"), false);
+  d.state.roommateInvites.push({ id: "foreign", senderId: "mai", receiverId: "bao", status: "PENDING" });
+  d.action("accept-roommate", "foreign"); d.action("reject-roommate", "foreign");
+  assert.equal(byId(d.state.roommateInvites, "foreign").status, "PENDING");
+  d.action("accept-roommate", "rm1");
+  const c = byId(d.state.conversations, d.state.selectedConversation);
+  byId(d.state.roommateInvites, "rm1").endedAt = "2026-10-24T03:00:00Z";
+  d.submit("chat-message", { message: "Không được gửi sau khi kết nối đã kết thúc" });
+  assert.equal(c.messages.length, 0);
+  d.action("reject-roommate", "rm1"); assert.equal(byId(d.state.roommateInvites, "rm1").status, "ACCEPTED");
+});
+
+test("one open invitation per pair blocks reverse invitations and merges legacy crossed invitations", () => {
+  const d = demo(); d.state.role = "tenant";
+  const count = d.state.roommateInvites.length;
+  d.action("send-roommate", "bao"); assert.equal(d.state.roommateInvites.length, count);
+  assert.equal(byId(d.state.roommateInvites, "rm1").status, "PENDING");
+  d.action("send-roommate", "ngoc"); const sent = d.state.roommateInvites.at(-1);
+  d.action("send-roommate", "ngoc"); assert.equal(d.state.roommateInvites.length, count + 1);
+  d.action("send-roommate", "lan"); assert.equal(d.state.roommateInvites.length, count + 1);
+  d.state.roommateInvites.push({ id: "crossed", senderId: "lan", receiverId: "bao", status: "PENDING" });
+  d.action("accept-roommate", "rm1");
+  assert.equal(byId(d.state.roommateInvites, "crossed").status, "CANCELLED");
+  assert.equal(byId(d.state.roommateInvites, "rm1").status, "ACCEPTED");
+  assert.equal(sent.status, "PENDING");
+  const chats = d.state.conversations.length; d.action("send-roommate", "bao");
+  assert.equal(d.state.conversations.length, chats);
+});
+
+test("legacy accepted connections are reused when accepting a duplicate pending invitation", () => {
+  const d = demo(); d.state.role = "tenant";
+  d.state.roommateInvites.push({ id: "older-accepted", senderId: "lan", receiverId: "bao", status: "ACCEPTED" });
+  d.action("accept-roommate", "rm1");
+  assert.equal(byId(d.state.roommateInvites, "rm1").status, "CANCELLED");
+  assert.equal(byId(d.state.conversations, d.state.selectedConversation).roommateRequestId, "older-accepted");
+});
+
+test("invitation profiles show shared criteria without disclosing resident identity details", () => {
+  const d = demo(); d.state.role = "tenant"; d.action("navigate", "roommates");
+  assert.match(d.node("#app-main").innerHTML, /data-action="roommate-profile" data-id="mai"/);
+  d.action("roommate-profile", "mai");
+  const html = d.node("#dialog-body").innerHTML;
+  assert.match(html, /Phạm Thu Mai/); assert.match(html, /Ngân sách/); assert.match(html, /Thói quen/); assert.match(html, /P305/);
+  assert.doesNotMatch(html, /001202|2002-06-15/);
+  assert.equal(byId(d.state.roommateInvites, "rm2").status, "PENDING");
+  d.state.roommateProfiles.mai.habits = '<img src=x onerror="alert(1)">';
+  d.action("roommate-profile", "mai"); assert.match(d.node("#dialog-body").innerHTML, /&lt;img/);
+  d.action("edit-roommate-profile"); assert.match(d.node("#dialog-body").innerHTML, /data-form="roommate-profile"/);
+  const old = structuredClone(d.state); delete old.roommateProfiles;
+  const restored = demo(old); restored.state.role = "tenant"; restored.action("roommate-profile", "bao");
+  assert.match(restored.node("#dialog-body").innerHTML, /Lê Gia Bảo/); assert.match(restored.node("#dialog-body").innerHTML, /Cầu Giấy/);
 });

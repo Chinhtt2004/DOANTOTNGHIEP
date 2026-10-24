@@ -179,6 +179,11 @@ td.actions-cell { text-align: right; }
 .chat-pane-head .avatar { width: 32px; height: 32px; }
 .chat-pane-head .head-copy { min-width: 0; flex: 1; }
 .chat-pane-head small { display: block; font-size: 11px; color: var(--muted); margin-top: 3px; }
+.connection-note { margin: 0 0 16px; padding: 10px 12px; border-radius: 5px; background: #edf6f4; color: #3d6660; font-size: 12px; line-height: 1.6; }
+.roommate-row { flex-wrap: wrap; align-items: flex-start; }
+.roommate-copy { flex: 1; min-width: 160px; overflow-wrap: anywhere; }
+.roommate-copy .pill { margin-top: 6px; }
+.roommate-row .table-actions { flex-wrap: wrap; }
 .chat-pane-body { flex: 1; min-height: 0; overflow-y: auto; background: #fafcfc; padding: 17px 20px; }
 .message-date { text-align: center; color: #829498; font-size: 10px; margin: 7px 0 16px; }
 .context-event { margin: 17px auto 14px; display: flex; align-items: center; gap: 10px; max-width: 390px; background: #fff; border: 1px solid #dce8e6; border-radius: 5px; padding: 7px; cursor: pointer; }
