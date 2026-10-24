@@ -1,0 +1,16 @@
+{
+  "name": "troday-demo",
+  "version": "5.0.0",
+  "private": true,
+  "description": "Wireframe HTML và SQL v5 cho hệ thống quản lý thuê trọ Trọday",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test tests/app.test.cjs",
+    "test:browser": "node tests/browser.test.cjs",
+    "test:database": "node tests/database.test.cjs",
+    "db:build": "node scripts/build-database.cjs",
+    "db:check": "node scripts/build-database.cjs --check"
+  }
+}
