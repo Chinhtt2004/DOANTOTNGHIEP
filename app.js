@@ -115,6 +115,7 @@ const seed = {
   templates: [{ id: "tpl1", name: "Hợp đồng thuê phòng", version: 1, content: "Thanh toán trước ngày 05 hằng tháng. Báo trước 30 ngày khi kết thúc.", active: true }, { id: "tpl2", name: "Phụ lục gia hạn", version: 1, content: "Gia hạn thời hạn thuê theo thỏa thuận của hai bên.", active: true }],
   audit: [{ id: "audit1", actorId: "admin", action: "APPROVE_POST", target: "Tin đăng P204", reason: "Đã kiểm tra nội dung và hình ảnh", date: "2026-10-21" }],
   notifications: [{ id: "n1", userId: "lan", text: "Chủ trọ đã gửi hợp đồng HD-2026-041 để bạn xác nhận.", read: false }, { id: "n2", userId: "quan", text: "Có yêu cầu gia hạn hợp đồng HD-2026-018.", read: false }, { id: "n3", userId: "admin", text: "Có 2 hồ sơ đang chờ xác minh.", read: false }],
+  announcements: [],
   reviews: []
 };
 
@@ -124,6 +125,12 @@ try { state = JSON.parse(localStorage.getItem(storageKey)) || structuredClone(se
 catch { state = structuredClone(seed); }
 state.chatDrafts ||= {};
 state.chatContexts ||= {};
+state.notifications ||= [];
+state.announcements ||= [];
+state.roommateTab ||= "matches";
+// Demo data: keep one active contract visible for the default tenant so the renewal flow is easy to try.
+if (!state.rooms.some((item) => item.id === "r7")) state.rooms.push({ id: "r7", code: "P203", houseId: "h1", title: "Phòng mẫu đang có hợp đồng", area: 20, price: 3500000, deposit: 3500000, capacity: 1, status: "OCCUPIED", distance: 1.4, photo: PHOTO.r2, amenities: ["Wi-Fi", "Điều hòa"], description: "Dữ liệu mẫu để minh họa trạng thái hợp đồng còn hiệu lực và yêu cầu gia hạn.", postStatus: "APPROVED" });
+if (!state.contracts.some((item) => item.id === "k4")) state.contracts.push({ id: "k4", number: "HD-2026-099", roomId: "r7", ownerId: "quan", tenantId: "lan", viewingId: null, source: "NEW_RENTAL", status: "ACTIVE", revisionNo: 1, revisionStatus: "CONFIRMED", start: "2026-10-01", end: "2027-09-30", rent: 3500000, deposit: 3500000, terms: "Thanh toán trước ngày 05 hằng tháng. Báo trước 30 ngày khi kết thúc.", feedback: "", members: [{ id: "o-demo-lan", tenantId: "lan", name: "Trần Ngọc Lan", identity: "001206******", dob: "2002-04-12", status: "PLANNED", moveIn: "" }], revisions: [{ version: 1, status: "CONFIRMED" }] });
 // Update bundled photos in saved demos without resetting the visitor's changes.
 for (const item of state.rooms) {
   const oldPhoto = /^(?:\.?\/)?assets\/(r[1-6])\.png$/i.exec(item.photo || "");
@@ -200,7 +207,7 @@ function render() {
 function roomCard(r) {
   const h = house(r.houseId);
   const saved = state.favorites.includes(r.id);
-  return `<article class="property-card"><div class="property-media"><img src="${esc(r.photo)}" alt="${esc(r.title)}" loading="lazy">${chip(r.status === "AVAILABLE" ? "Còn phòng" : "Sắp có phòng", r.status === "AVAILABLE" ? "green" : "yellow")}</div><div class="property-body"><h2 class="property-title">${esc(r.title)}</h2><div class="property-location">${icon("map-pin")}<span>${esc(h.area)} · ${esc(h.address)}</span></div><div class="property-meta"><span>${r.area} m²</span><span>•</span><span>Tối đa ${r.capacity} người</span><span>•</span><span>${r.distance} km</span></div><div class="property-foot"><div class="price">${shortMoney(r.price)}<small>/tháng</small></div><div class="property-buttons"><button type="button" class="icon-button" data-action="favorite" data-id="${r.id}" aria-label="${saved ? "Bỏ lưu" : "Lưu tin"}" title="${saved ? "Bỏ lưu" : "Lưu tin"}">${icon(saved ? "heart-handshake" : "heart")}</button>${button("Xem phòng", "room-detail", r.id, "small")}</div></div></div></article>`;
+  return `<article class="property-card"><div class="property-media"><img src="${esc(r.photo)}" alt="${esc(r.title)}" loading="lazy">${chip(r.status === "AVAILABLE" ? "Còn phòng" : "Sắp có phòng", r.status === "AVAILABLE" ? "green" : "yellow")}</div><div class="property-body"><h2 class="property-title">${esc(r.title)}</h2><div class="property-location">${icon("map-pin")}<span>${esc(h.area)} · ${esc(h.address)}</span></div><div class="property-meta"><span>${r.area} m²</span><span>•</span><span>Tối đa ${r.capacity} người</span><span>•</span><span>${r.distance} km</span></div><div class="property-foot"><div class="price">${shortMoney(r.price)}<small>/tháng</small></div><div class="property-buttons"><button type="button" class="icon-button" data-action="favorite" data-id="${r.id}" aria-label="${saved ? "Bỏ lưu" : "Lưu tin"}" title="${saved ? "Bỏ lưu" : "Lưu tin"}">${icon(saved ? "heart-handshake" : "heart")}</button>${state.role === "tenant" ? `<button type="button" class="icon-button" data-action="share-room" data-id="${r.id}" aria-label="Chia sẻ phòng" title="Chia sẻ phòng">${icon("share-2")}</button>` : ""}${button("Xem phòng", "room-detail", r.id, "small")}${state.view === "favorites" ? button(`${icon("heart-off")} Bỏ lưu`, "favorite", r.id, "small") : ""}</div></div></div></article>`;
 }
 
 function renderDiscover() {
@@ -233,9 +240,17 @@ function renderDetail() {
     const service = byId(state.services, item.serviceId);
     return service && service.active ? `${service.name}: ${money(item.override ?? service.price)}/${service.unit}` : "";
   }).filter(Boolean);
+  const upcomingViewing = state.viewings
+    .filter((v) => v.roomId === r.id && v.status === "SCHEDULED" && [v.ownerId, v.tenantId].includes(userId()))
+    .sort((a, b) => viewingStart(a) - viewingStart(b))[0];
+  const viewingPanel = upcomingViewing
+    ? `<div class="viewing-summary"><div class="viewing-summary-head">${icon("calendar-days")}<strong>Lịch xem sắp tới</strong>${chip("Đã hẹn", "yellow")}</div><p>${dateLabel(todayISO(viewingStart(upcomingViewing)))} · ${viewingTimeLabel(upcomingViewing)}</p><small>Thời gian hiển thị theo giờ Việt Nam (UTC+7).</small>${button("Mở danh sách lịch xem", "navigate", "viewings", "small")}</div>`
+    : state.role === "landlord" && h.ownerId === userId()
+      ? `<div class="viewing-summary viewing-summary-empty"><div class="viewing-summary-head">${icon("calendar-plus")}<strong>Chưa có lịch xem</strong></div><p>Tạo lịch sau khi đã trao đổi phòng này với người thuê.</p>${button("Tạo lịch hẹn", "schedule-room-viewing", r.id, "small primary")}</div>`
+      : "";
   const backView = state.role === "admin" ? "moderation" : state.role === "landlord" ? "listings" : "discover";
   return head(r.title, `${r.code} · ${h.address}`, `${button(`${icon("arrow-left")} Danh sách`, "navigate", backView)}${state.role === "tenant" ? button(`${icon("heart")} ${saved ? "Bỏ lưu" : "Lưu tin"}`, "favorite", r.id) : ""}`) +
-    `<div class="detail-layout"><div><img class="detail-image" src="${esc(r.photo)}" alt="${esc(r.title)}"><div class="detail-info"><div><span class="muted tiny">Diện tích</span><strong>${r.area} m²</strong></div><div><span class="muted tiny">Sức chứa</span><strong>${r.capacity} người</strong></div><div><span class="muted tiny">Khoảng cách</span><strong>${r.distance} km</strong></div></div><div class="section-bar"><h2>Về phòng này</h2></div><p class="muted" style="font-size:13px;line-height:1.6">${esc(r.description)}</p><div class="section-bar"><h2>Tiện ích</h2></div><div class="amenity-list">${r.amenities.map((x) => `<span>${esc(x)}</span>`).join("")}</div><div class="section-bar"><h2>Dịch vụ áp dụng</h2></div><div class="stack tight">${services.length ? services.map((x) => `<div class="list-row"><strong>${esc(x)}</strong></div>`).join("") : `<span class="muted tiny">Chủ trọ chưa cập nhật dịch vụ.</span>`}</div></div><aside class="detail-sidebar"><div class="price">${shortMoney(r.price)} <small>/tháng</small></div><p class="muted tiny">Cọc ${money(r.deposit)} · ${chip(r.status === "AVAILABLE" ? "Còn phòng" : "Đã giữ chỗ", r.status === "AVAILABLE" ? "green" : "yellow")}</p><div class="list-row"><div>${avatar(h.ownerId)}</div><div style="flex:1"><strong>${esc(owner.name)}</strong><small>Chủ trọ · ${esc(h.name)}</small></div></div>${state.role === "tenant" ? `<div class="stack" style="margin-top:16px">${button(`${icon("message-circle")} Nhắn tin về phòng này`, "chat-room", r.id, "primary")}${button(`${icon("flag")} Báo cáo tin`, "report-post", r.id)}</div>` : ""}</aside></div>`;
+    `<div class="detail-layout"><div><img class="detail-image" src="${esc(r.photo)}" alt="${esc(r.title)}"><div class="detail-info"><div><span class="muted tiny">Diện tích</span><strong>${r.area} m²</strong></div><div><span class="muted tiny">Sức chứa</span><strong>${r.capacity} người</strong></div><div><span class="muted tiny">Khoảng cách</span><strong>${r.distance} km</strong></div></div><div class="section-bar"><h2>Về phòng này</h2></div><p class="muted" style="font-size:13px;line-height:1.6">${esc(r.description)}</p><div class="section-bar"><h2>Tiện ích</h2></div><div class="amenity-list">${r.amenities.map((x) => `<span>${esc(x)}</span>`).join("")}</div><div class="section-bar"><h2>Dịch vụ áp dụng</h2></div><div class="stack tight">${services.length ? services.map((x) => `<div class="list-row"><strong>${esc(x)}</strong></div>`).join("") : `<span class="muted tiny">Chủ trọ chưa cập nhật dịch vụ.</span>`}</div></div><aside class="detail-sidebar"><div class="price">${shortMoney(r.price)} <small>/tháng</small></div><p class="muted tiny">Cọc ${money(r.deposit)} · ${chip(r.status === "AVAILABLE" ? "Còn phòng" : "Đã giữ chỗ", r.status === "AVAILABLE" ? "green" : "yellow")}</p><div class="list-row"><div>${avatar(h.ownerId)}</div><div style="flex:1"><strong>${esc(owner.name)}</strong><small>Chủ trọ · ${esc(h.name)}</small></div></div>${viewingPanel}${state.role === "tenant" ? `<div class="stack" style="margin-top:16px">${button(`${icon("calendar-plus")} ${upcomingViewing ? "Trao đổi về lịch xem" : "Nhắn tin để hẹn xem"}`, "chat-room", r.id, "primary")}${button(`${icon("share-2")} Chia sẻ cho người đã nhắn`, "share-room", r.id)}${button(`${icon("flag")} Báo cáo tin`, "report-post", r.id)}</div>` : ""}</aside></div>`;
 }
 
 function visibleConversations() { return state.conversations.filter((c) => c.users.includes(userId())); }
@@ -282,6 +297,38 @@ function chatViewingCards(conversation) {
   }).join("")}</section>`;
 }
 
+function chatRelatedContracts(conversation) {
+  if (conversation.type === "ROOMMATE" || conversation.users.length !== 2 || !conversation.users.includes(userId())) return [];
+  const roomIds = new Set(chatRoomChoices(conversation));
+  return state.contracts.filter((c) => {
+    const pairMatches = conversation.users.includes(c.ownerId) && conversation.users.includes(c.tenantId);
+    return pairMatches && roomIds.has(c.roomId);
+  }).sort((a, b) => String(b.start).localeCompare(String(a.start)));
+}
+
+function chatLifecycleCards(conversation) {
+  const contracts = chatRelatedContracts(conversation);
+  if (!contracts.length) return "";
+  const contractIds = new Set(contracts.map((c) => c.id));
+  const invoices = state.invoices.filter((i) => contractIds.has(i.contractId)).sort((a, b) => String(b.period).localeCompare(String(a.period)));
+  const events = [];
+  for (const c of contracts) {
+    const r = room(c.roomId);
+    if (!r) continue;
+    events.push(`<article class="chat-event-card"><div class="chat-event-heading"><strong>${icon("file-text")} Hợp đồng ${esc(c.number)}</strong>${chip(...(CONTRACT_LABEL[c.status] || ["Chưa rõ trạng thái", "gray"]))}</div><p class="chat-event-title">${esc(r.code)} · ${esc(roomName(r.id))}</p><p class="muted tiny">Thời hạn ${dateLabel(c.start)} – ${dateLabel(c.end)} · ${shortMoney(c.rent)}/tháng</p>${c.status === "ACTIVE" ? `<p class="chat-event-note">Hợp đồng đang có hiệu lực. Các thành viên đã vào ở được theo dõi trong hồ sơ hợp đồng.</p>` : c.status === "PENDING_CONFIRMATION" ? `<p class="chat-event-note">Chủ trọ đã gửi hợp đồng để người thuê xác nhận.</p>` : c.status === "TERMINATED" ? `<p class="chat-event-note">Hợp đồng này đã kết thúc và được lưu trong lịch sử.</p>` : ""}<div class="chat-event-actions">${button("Xem hợp đồng", "contract-detail", c.id, "small")}</div></article>`);
+    for (const m of c.members.filter((member) => member.status === "ACTIVE" && member.moveIn)) {
+      events.push(`<article class="chat-event-card compact"><div class="chat-event-heading"><strong>${icon("key-round")} Đã nhận phòng</strong>${chip("Đã vào ở", "green")}</div><p class="chat-event-title">${esc(m.name)} · ${esc(r.code)}</p><p class="muted tiny">Ngày vào ở: ${dateLabel(m.moveIn)}</p></article>`);
+    }
+  }
+  for (const i of invoices) {
+    const c = contract(i.contractId);
+    const r = c && room(c.roomId);
+    const invoiceStatus = i.status === "PAID" ? ["Đã thanh toán", "green"] : i.status === "UNPAID" ? ["Chưa thanh toán", "orange"] : ["Bản nháp", "gray"];
+    events.push(`<article class="chat-event-card"><div class="chat-event-heading"><strong>${icon("receipt")} Hóa đơn ${esc(i.code)}</strong>${chip(...invoiceStatus)}</div><p class="chat-event-title">${esc(r?.code || "Phòng thuê")} · Kỳ ${esc(monthLabel(i.period))}</p><p class="muted tiny">Hạn thanh toán: ${dateLabel(i.due)} · Tổng: <strong>${money(totalInvoice(i))}</strong></p><div class="chat-event-actions">${button("Xem hóa đơn", "invoice-detail", i.id, "small")}</div></article>`);
+  }
+  return `<section class="chat-events" aria-label="Sự kiện liên quan đến phòng"><h3>Sự kiện liên quan đến phòng</h3>${events.join("")}</section>`;
+}
+
 function renderChats() {
   const conversations = visibleConversations();
   const current = conversations.find((c) => c.id === state.selectedConversation) || conversations[0];
@@ -304,7 +351,7 @@ function renderChats() {
   return head("Tin nhắn", "Trao đổi với chủ trọ và những người đã kết nối") +
     `<div class="chat-shell ${state.chatMobileOpen ? "thread-open" : ""}">
       <section class="chat-contacts">
-        <div class="chat-contact-head"><h2>Hội thoại</h2>${chip(String(conversations.length), "green")}</div>
+        <div class="chat-contact-head"><div class="chat-contact-title"><h2>Hội thoại</h2>${chip(String(conversations.length), "green")}</div>${state.role === "landlord" ? button(`${icon("message-circle")} Soạn tin`, "open-message", "", "small") : ""}</div>
         <input class="search-input chat-search" id="chat-search" placeholder="Tìm người đang chat" aria-label="Tìm người đang chat">
         <div class="contact-list">${conversations.map((c) => {
           const p = otherUser(c);
@@ -318,7 +365,7 @@ function renderChats() {
           ${avatar(peer)}<div class="head-copy"><h2>${esc(person(peer).name)}</h2><small>${isRoommate ? "Đã kết nối · Trao đổi ở ghép" : `${choices.length} phòng đã trao đổi`}</small></div>
           ${isRoommate ? button("Xem hồ sơ", "roommate-profile", peer, "small") : button(`${icon("calendar-plus")} Hẹn xem`, "open-appointment", "", "small", state.role !== "landlord" ? "disabled title=\"Chủ trọ tạo lịch hẹn\"" : "")}
         </div>
-        <div class="chat-pane-body" role="log" aria-label="Nội dung hội thoại">${isRoommate ? '<p class="connection-note">Hai bạn đã kết nối để trao đổi. Việc thuê chung cần được thỏa thuận và xác nhận riêng.</p>' : '<div class="message-date">Hội thoại gần đây</div>'}${messages || (isRoommate ? '<p class="muted tiny">Gửi lời chào để bắt đầu cuộc trò chuyện.</p>' : "")}${chatViewingCards(current)}</div>
+        <div class="chat-pane-body" role="log" aria-label="Nội dung hội thoại">${isRoommate ? '<p class="connection-note">Hai bạn đã kết nối để trao đổi. Việc thuê chung cần được thỏa thuận và xác nhận riêng.</p>' : '<div class="message-date">Hội thoại gần đây</div>'}${messages || (isRoommate ? '<p class="muted tiny">Gửi lời chào để bắt đầu cuộc trò chuyện.</p>' : "")}${chatViewingCards(current)}${chatLifecycleCards(current)}</div>
         <form class="chat-composer" data-form="chat-message" aria-label="Soạn tin nhắn">
           ${!isRoommate ? `<div class="chat-room-picker">
             <label for="chat-room-context">Trao đổi về</label>
@@ -367,19 +414,23 @@ function renderViewings() {
     `<p class="muted tiny">Thời gian hiển thị theo giờ Việt Nam (UTC+7).</p><div class="tabs">${tabs.map(([id, label]) => `<button type="button" class="tab-button ${state.tab === id ? "active" : ""}" data-action="tab" data-id="${id}">${label}</button>`).join("")}</div><div class="table-surface table-scroll">${visible.length ? `<table><thead><tr><th>Phòng</th><th>Người thuê</th><th>Thời gian</th><th>Lịch xem</th><th>Quyết định</th><th></th></tr></thead><tbody>${visible.map((v) => { const r = room(v.roomId); return `<tr><td><div class="room-row"><img src="${esc(r.photo)}" alt=""><div><span class="cell-title">${esc(r.code)}</span><span class="cell-sub">${esc(house(r.houseId).name)}</span></div></div></td><td>${esc(person(v.tenantId).name)}</td><td>${dateLabel(v.date)}<span class="cell-sub">${viewingTimeLabel(v)}</span>${v.cancellationReason ? `<span class="cell-sub">${esc(v.cancellationReason)}</span>` : ""}</td><td>${chip(...VIEWING_LABEL[v.status])}</td><td>${chip(...DECISION_LABEL[v.decision])}</td><td class="actions-cell"><div class="table-actions">${viewingActions(v)}</div></td></tr>`; }).join("")}</tbody></table>` : empty("Không có lịch hẹn", "Các lịch xem phòng sẽ xuất hiện ở đây.")}</div>`;
 }
 
-const CONTRACT_LABEL = { DRAFT: ["Bản nháp", "gray"], PENDING_CONFIRMATION: ["Chờ xác nhận", "yellow"], CONFIRMED: ["Đã xác nhận", "purple"], ACTIVE: ["Đang ở", "green"], TERMINATED: ["Đã kết thúc", "gray"], EXPIRED: ["Hết hạn", "gray"], CANCELLED: ["Đã hủy", "red"] };
+const CONTRACT_LABEL = { DRAFT: ["Bản nháp", "gray"], PENDING_CONFIRMATION: ["Chờ xác nhận", "yellow"], CONFIRMED: ["Đã xác nhận", "purple"], ACTIVE: ["Còn hiệu lực", "green"], TERMINATED: ["Đã kết thúc", "gray"], EXPIRED: ["Hết hạn", "gray"], CANCELLED: ["Đã hủy", "red"] };
 const CHANGE_LABEL = { PENDING: ["Chờ chủ trọ", "yellow"], APPROVED_WAITING_CONFIRMATION: ["Chờ đại diện xác nhận", "yellow"], READY_TO_APPLY: ["Chờ áp dụng", "yellow"], COMPLETED: ["Đã áp dụng", "green"], REJECTED: ["Từ chối", "gray"], CANCELLED: ["Đã hủy", "gray"], EXPIRED: ["Hết hạn", "gray"] };
 function renderContracts() {
   const contracts = state.contracts.filter((c) => state.role === "tenant" ? c.members.some((m) => m.tenantId === userId()) : c.ownerId === "quan");
+  const activeContracts = contracts.filter((c) => c.status === "ACTIVE");
   const selected = contracts.find((c) => c.id === state.selectedContract) || contracts[0];
   if (!selected) return head("Hợp đồng") + empty("Chưa có hợp đồng", "Sau khi đồng ý thuê, chủ trọ sẽ lập hợp đồng cho bạn.");
   state.selectedContract = selected.id;
   const r = room(selected.roomId);
   const changes = state.changeRequests.filter((x) => x.contractId === selected.id);
-  const tenantActions = selected.status === "PENDING_CONFIRMATION" && selected.tenantId === userId() ? `${button("Yêu cầu sửa", "open-feedback", selected.id)}${button(`${icon("check")} Xác nhận nội dung`, "confirm-contract", selected.id, "primary")}` : selected.status === "ACTIVE" && selected.tenantId === userId() ? button(`${icon("repeat-2")} Đề nghị thay đổi`, "open-change", selected.id) : selected.status === "TERMINATED" ? button(`${icon("star")} Đánh giá phòng`, "open-review", selected.id) : "";
+  const renewalRequest = changes.find((x) => x.type === "RENEWAL" && ["PENDING", "APPROVED_WAITING_CONFIRMATION", "READY_TO_APPLY"].includes(x.status));
+  const renewalPanel = selected.status === "ACTIVE" ? `<div class="contract-renewal-hint"><strong>${icon("calendar-plus")} Gia hạn hợp đồng</strong><p>Ví dụ: ${esc(selected.number)} của phòng ${esc(r.code)} còn hiệu lực đến <strong>${dateLabel(selected.end)}</strong>. Người thuê có thể gửi yêu cầu gia hạn trước ngày này.</p>${renewalRequest ? `<small>${renewalRequest.status === "PENDING" ? "Yêu cầu gia hạn đang chờ chủ trọ chấp nhận." : renewalRequest.status === "APPROVED_WAITING_CONFIRMATION" ? "Chủ trọ đã chấp nhận, đang chờ người thuê xác nhận." : "Hai bên đã xác nhận, chờ chủ trọ áp dụng khi đến ngày hiệu lực."}</small>` : ""}</div>` : "";
+  const tenantActions = selected.status === "PENDING_CONFIRMATION" && selected.tenantId === userId() ? `${button("Yêu cầu sửa", "open-feedback", selected.id)}${button(`${icon("check")} Xác nhận nội dung`, "confirm-contract", selected.id, "primary")}` : selected.status === "ACTIVE" && selected.tenantId === userId() ? `<div class="contract-action-group"><strong>Thao tác với hợp đồng</strong><div class="table-actions">${button(`${icon("calendar-plus")} Yêu cầu gia hạn`, "open-renewal", selected.id, "primary")}${button(`${icon("pencil-line")} Yêu cầu thay đổi`, "open-transfer", selected.id)}${button(`${icon("file-minus-2")} Yêu cầu chấm dứt`, "open-termination", selected.id, "danger")}</div></div>` : selected.status === "TERMINATED" ? button(`${icon("star")} Đánh giá phòng`, "open-review", selected.id) : "";
+  const contractTableActions = (c) => button("Chi tiết", "contract-detail", c.id, "small");
   const ownerActions = (selected.status === "DRAFT" ? button("Chỉnh và gửi lại", "open-resend", selected.id, "primary") : ["CONFIRMED", "ACTIVE"].includes(selected.status) && selected.members.some((m) => m.status === "PLANNED") ? button(`${icon("key-round")} Xác nhận thành viên vào ở`, "confirm-move-in", selected.id, "primary") : "") + (["DRAFT", "PENDING_CONFIRMATION", "CONFIRMED"].includes(selected.status) ? button("Hủy hợp đồng", "cancel-contract", selected.id, "danger") : "");
-  return head("Hợp đồng", `${contracts.length} hợp đồng liên quan`, button("Lịch sử đại diện", "representative-history", selected.id)) +
-    `<div class="split-grid"><div><div class="table-surface table-scroll"><table><thead><tr><th>Số hợp đồng</th><th>Phòng</th><th>Thời hạn</th><th>Trạng thái</th><th></th></tr></thead><tbody>${contracts.map((c) => `<tr><td><span class="cell-title">${esc(c.number)}</span><span class="cell-sub">${esc(person(c.tenantId).name)}</span></td><td>${esc(room(c.roomId).code)}</td><td>${dateLabel(c.start)} - ${dateLabel(c.end)}</td><td>${chip(...CONTRACT_LABEL[c.status])}</td><td class="actions-cell">${button("Chi tiết", "contract-detail", c.id, "small")}</td></tr>`).join("")}</tbody></table></div>${state.role === "landlord" && state.changeRequests.length ? `<div class="section-bar"><h2>Yêu cầu điều chỉnh</h2></div><div class="flat-surface"><div style="padding:0 15px">${state.changeRequests.filter((x) => x.status === "PENDING").map((x) => `<div class="list-row"><div><strong>${esc(x.type === "RENEWAL" ? "Gia hạn" : x.type === "TRANSFER" ? "Đổi phòng" : "Kết thúc")} · ${esc(contract(x.contractId)?.number || "")}</strong><small>${esc(x.note)} · ${esc(person(x.requestedBy).name)}</small></div>${button("Xử lý", "review-change", x.id, "small")}</div>`).join("") || `<div class="list-row"><span class="muted tiny">Không có yêu cầu mới.</span></div>`}</div></div>` : ""}</div><aside><div class="subtle-panel"><div class="room-row"><img src="${esc(r.photo)}" alt=""><div><h3>${esc(r.code)} · ${esc(r.title)}</h3><span class="muted tiny">${esc(house(r.houseId).name)}</span></div></div><div class="list-row"><div><strong>${esc(selected.number)}</strong><small>Phiên bản ${selected.revisionNo} · ${selected.source === "PAPER_IMPORT" ? "Hồ sơ giấy" : "Thuê mới"}</small></div>${chip(...CONTRACT_LABEL[selected.status])}</div><div class="list-row"><div><strong>Đại diện</strong><small>${esc(person(selected.tenantId).name)}</small></div></div><div class="list-row"><div><strong>Thời hạn</strong><small>${dateLabel(selected.start)} - ${dateLabel(selected.end)}</small></div></div><div class="list-row"><div><strong>Giá thuê / cọc</strong><small>${money(selected.rent)} / ${money(selected.deposit)}</small></div></div><div class="list-row"><div><strong>Thành viên</strong><small>${selected.members.map((m) => esc(m.name)).join(", ")}</small></div></div><div class="list-row"><div><strong>Điều khoản</strong><small>${esc(selected.terms)}</small></div></div>${selected.feedback ? `<div class="list-row"><div><strong>Góp ý gần nhất</strong><small>${esc(selected.feedback)}</small></div></div>` : ""}<div class="stack" style="margin-top:15px">${state.role === "tenant" ? tenantActions : ownerActions}</div></div>${changes.length ? `<div class="section-bar"><h2>Lịch sử thay đổi</h2></div>${changes.map((x) => `<div class="list-row"><div><strong>${esc(x.type)} · ${dateLabel(x.effective)}</strong><small>${esc(x.note)}</small></div><div class="table-actions">${chip(...(CHANGE_LABEL[x.status] || [x.status, "gray"]))}${state.role === "tenant" && x.status === "APPROVED_WAITING_CONFIRMATION" ? button("Đồng ý phương án", "accept-change", x.id, "small primary") : ""}${state.role === "landlord" && x.status === "READY_TO_APPLY" ? button("Áp dụng", "apply-change", x.id, "small primary") : ""}</div></div>`).join("")}` : ""}</aside></div>`;
+  return head("Hợp đồng", `${contracts.length} hợp đồng liên quan${activeContracts.length ? ` · ${activeContracts.length} phòng đang trong hợp đồng` : ""}`, button("Lịch sử đại diện", "representative-history", selected.id)) +
+    `<div class="split-grid"><div><div class="table-surface table-scroll"><table><thead><tr><th>Số hợp đồng</th><th>Phòng</th><th>Thời hạn</th><th>Trạng thái</th><th></th></tr></thead><tbody>${contracts.map((c) => `<tr><td><span class="cell-title">${esc(c.number)}</span><span class="cell-sub">${esc(person(c.tenantId).name)}</span></td><td><span class="cell-title">${esc(room(c.roomId).code)}</span>${c.status === "ACTIVE" ? `<span class="cell-sub">Phòng đang thuê</span>` : ""}</td><td>${dateLabel(c.start)} - ${dateLabel(c.end)}</td><td>${chip(...CONTRACT_LABEL[c.status])}</td><td class="actions-cell">${contractTableActions(c)}</td></tr>`).join("")}</tbody></table></div>${state.role === "landlord" && state.changeRequests.length ? `<div class="section-bar"><h2>Yêu cầu gia hạn / điều chỉnh</h2></div><div class="flat-surface"><div style="padding:0 15px">${state.changeRequests.filter((x) => x.status === "PENDING").map((x) => `<div class="list-row"><div><strong>${esc(x.type === "RENEWAL" ? "Yêu cầu gia hạn" : x.type === "TRANSFER" ? "Đổi phòng" : "Kết thúc")} · ${esc(contract(x.contractId)?.number || "")}</strong><small>${esc(x.note)} · ${esc(person(x.requestedBy).name)}</small></div>${button(x.type === "RENEWAL" ? "Chấp nhận" : "Xử lý", "review-change", x.id, "small primary")}</div>`).join("") || `<div class="list-row"><span class="muted tiny">Không có yêu cầu mới.</span></div>`}</div></div>` : ""}</div><aside><div class="subtle-panel"><div class="room-row"><img src="${esc(r.photo)}" alt=""><div><h3>${esc(r.code)} · ${esc(r.title)}</h3><span class="muted tiny">${esc(house(r.houseId).name)}</span></div></div><div class="list-row"><div><strong>${esc(selected.number)}</strong><small>Phiên bản ${selected.revisionNo} · ${selected.source === "PAPER_IMPORT" ? "Hồ sơ giấy" : "Thuê mới"}</small></div>${chip(...CONTRACT_LABEL[selected.status])}</div>${selected.status === "ACTIVE" ? `<div class="list-row"><div><strong>Phòng đang thuê</strong><small>${esc(r.code)} · Hợp đồng còn hiệu lực đến ${dateLabel(selected.end)}</small></div></div>` : ""}${renewalPanel}<div class="list-row"><div><strong>Đại diện</strong><small>${esc(person(selected.tenantId).name)}</small></div></div><div class="list-row"><div><strong>Thời hạn</strong><small>${dateLabel(selected.start)} - ${dateLabel(selected.end)}</small></div></div><div class="list-row"><div><strong>Giá thuê / cọc</strong><small>${money(selected.rent)} / ${money(selected.deposit)}</small></div></div><div class="list-row"><div><strong>Thành viên</strong><small>${selected.members.map((m) => esc(m.name)).join(", ")}</small></div></div><div class="list-row"><div><strong>Điều khoản</strong><small>${esc(selected.terms)}</small></div></div>${selected.feedback ? `<div class="list-row"><div><strong>Góp ý gần nhất</strong><small>${esc(selected.feedback)}</small></div></div>` : ""}<div class="stack" style="margin-top:15px">${state.role === "tenant" ? tenantActions : ownerActions}</div></div>${changes.length ? `<div class="section-bar"><h2>Lịch sử thay đổi</h2></div>${changes.map((x) => `<div class="list-row"><div><strong>${esc(x.type)} · ${dateLabel(x.effective)}</strong><small>${esc(x.note)}</small></div><div class="table-actions">${chip(...(CHANGE_LABEL[x.status] || [x.status, "gray"]))}${state.role === "tenant" && x.status === "APPROVED_WAITING_CONFIRMATION" ? button("Đồng ý phương án", "accept-change", x.id, "small primary") : ""}${state.role === "landlord" && x.status === "READY_TO_APPLY" ? button("Áp dụng", "apply-change", x.id, "small primary") : ""}</div></div>`).join("")}` : ""}</aside></div>`;
 }
 
 function renderDashboard() {
@@ -393,7 +444,7 @@ function renderDashboard() {
   const scheduled = state.viewings.filter((v) => v.ownerId === "quan" && v.status === "SCHEDULED" && viewingEnd(v) > Date.now()).sort((a, b) => viewingStart(a) - viewingStart(b));
   const occupied = ownRooms.filter((r) => r.status === "OCCUPIED");
   const unpaid = state.invoices.filter((i) => contract(i.contractId)?.ownerId === "quan" && i.status === "UNPAID");
-  return head("Tổng quan nhà trọ", "Hoạt động trong hệ thống hôm nay", button(`${icon("plus")} Tạo lịch xem`, "open-appointment", "", "primary")) +
+  return head("Tổng quan nhà trọ", "Hoạt động trong hệ thống hôm nay", `${button(`${icon("megaphone")} Gửi thông báo`, "open-announcement", "", "primary")}${button(`${icon("plus")} Tạo lịch xem`, "open-appointment", "", "primary")}`) +
     `<div class="kpi-grid"><div class="kpi"><span class="kpi-label">Tổng số phòng</span><div class="kpi-value">${ownRooms.length}</div><div class="kpi-foot">${state.houses.filter((h) => h.ownerId === "quan").length} nhà trọ</div></div><div class="kpi"><span class="kpi-label">Đang có người ở</span><div class="kpi-value">${occupied.length}</div><div class="kpi-foot">${ownRooms.length - occupied.length} phòng chưa có người ở</div></div><div class="kpi"><span class="kpi-label">Lịch xem sắp tới</span><div class="kpi-value">${scheduled.length}</div><div class="kpi-foot">Cần xác nhận người đến xem</div></div><div class="kpi"><span class="kpi-label">Hóa đơn chưa thu</span><div class="kpi-value">${unpaid.length}</div><div class="kpi-foot">${shortMoney(unpaid.reduce((sum, i) => sum + totalInvoice(i), 0))}</div></div></div><div class="split-grid"><div><div class="section-bar"><h2>Lịch xem gần nhất</h2>${button("Xem tất cả", "navigate", "viewings", "small")}</div><div class="flat-surface" style="padding:0 15px">${scheduled.length ? scheduled.map((v) => `<div class="list-row"><div><strong>${esc(roomName(v.roomId))}</strong><small>${esc(person(v.tenantId).name)} · ${dateLabel(v.date)} ${v.time}</small></div>${chip("Đã hẹn", "yellow")}</div>`).join("") : empty("Chưa có lịch sắp tới", "")}</div></div><div><div class="section-bar"><h2>Cần xử lý</h2></div><div class="subtle-panel"><div class="list-row"><div><strong>Hợp đồng chờ xác nhận</strong><small>${state.contracts.filter((c) => c.ownerId === "quan" && c.status === "PENDING_CONFIRMATION").length} hợp đồng</small></div>${button("Mở", "navigate", "contracts", "small")}</div><div class="list-row"><div><strong>Yêu cầu người ở ghép</strong><small>${state.joinRequests.filter((x) => x.status === "PENDING_LANDLORD").length} yêu cầu</small></div>${button("Mở", "navigate", "residents", "small")}</div><div class="list-row"><div><strong>Dịch vụ của nhà</strong><small>Giá theo từng nhà và phòng</small></div>${button("Mở", "navigate", "services", "small")}</div></div></div></div>`;
 }
 
@@ -494,8 +545,15 @@ function renderRoommates() {
     const actions = item.status === "PENDING" && received ? `${button("Chấp nhận kết nối", "accept-roommate", item.id, "small primary")}${button("Từ chối", "reject-roommate", item.id, "small")}` : item.status === "ACCEPTED" && !item.endedAt ? button("Nhắn tin", "chat-roommate", item.id, "small primary") : "";
     return `<div class="list-row roommate-row">${avatar(peer)}<div class="roommate-copy"><strong>${esc(person(peer).name)}</strong><small>${esc(item.note)}</small>${chip(labels[item.status] || "Chưa rõ trạng thái", item.status === "ACCEPTED" && !item.endedAt ? "green" : "gray")}</div><div class="table-actions">${button("Xem hồ sơ", "roommate-profile", peer, "small")}${actions}</div></div>`;
   }).join("") || '<p class="muted tiny">Chưa có lời mời.</p>';
+  const tabs = [["matches", "Người phù hợp", matches.length], ["incoming", "Lời mời dành cho bạn", incoming.filter((x) => x.status === "PENDING").length], ["outgoing", "Đã mời", outgoing.length]];
+  const activeTab = tabs.some(([id]) => id === state.roommateTab) ? state.roommateTab : "matches";
+  const tabContent = activeTab === "matches"
+    ? `<div class="section-bar" style="margin-top:0"><h2>Người phù hợp</h2><span class="muted tiny">Dựa trên khu vực, ngân sách và thói quen</span></div><div class="flat-surface" style="padding:0 16px">${matches.map((id) => { const profile = roommateProfileFor(id); return `<div class="list-row roommate-row">${avatar(id)}<div class="roommate-copy"><strong>${esc(person(id).name)}</strong><small>${esc(profile?.location)} · ${profile ? `Ngân sách ${shortMoney(profile.budgetMin)}–${shortMoney(profile.budgetMax)}` : "Chưa cập nhật tiêu chí"}</small></div><div class="table-actions">${button("Xem hồ sơ", "roommate-profile", id, "small")}${roommateConnectionAction(id)}</div></div>`; }).join("") || empty("Chưa có người phù hợp", "Hãy cập nhật tiêu chí để tìm người ở ghép phù hợp hơn.")}</div>`
+    : activeTab === "incoming"
+      ? `<div class="section-bar" style="margin-top:0"><h2>Lời mời dành cho bạn</h2><span class="muted tiny">Người khác đã chủ động kết nối</span></div><div class="flat-surface" style="padding:0 16px">${invitationList(incoming.filter((x) => x.status === "PENDING"), true)}</div>`
+      : `<div class="section-bar" style="margin-top:0"><h2>Đã mời</h2><span class="muted tiny">Theo dõi các lời mời bạn đã gửi</span></div><div class="flat-surface" style="padding:0 16px">${invitationList(outgoing, false)}</div>`;
   return head("Tìm người ở ghép", "Kết nối để trò chuyện và tìm hiểu trước khi quyết định thuê chung", button(`${icon("sliders-horizontal")} Sửa tiêu chí`, "edit-roommate-profile")) +
-    `<div class="split-grid"><div><div class="section-bar" style="margin-top:0"><h2>Người phù hợp</h2></div><div class="flat-surface" style="padding:0 16px">${matches.map((id) => { const profile = roommateProfileFor(id); return `<div class="list-row roommate-row">${avatar(id)}<div class="roommate-copy"><strong>${esc(person(id).name)}</strong><small>${esc(profile?.location)} · ${profile ? `Ngân sách ${shortMoney(profile.budgetMin)}–${shortMoney(profile.budgetMax)}` : "Chưa cập nhật tiêu chí"}</small></div><div class="table-actions">${button("Xem hồ sơ", "roommate-profile", id, "small")}${roommateConnectionAction(id)}</div></div>`; }).join("")}</div><div class="section-bar"><h2>Lời mời dành cho bạn</h2></div><div class="flat-surface" style="padding:0 16px">${invitationList(incoming, true)}</div>${outgoing.length ? `<div class="section-bar"><h2>Lời mời đã gửi</h2></div><div class="flat-surface" style="padding:0 16px">${invitationList(outgoing, false)}</div>` : ""}</div><aside><div class="subtle-panel"><h3>Hồ sơ ở ghép của bạn</h3>${roommateProfileSummary(me)}</div></aside></div>`;
+    `<div class="split-grid"><div><div class="tabs roommate-tabs">${tabs.map(([id, label, count]) => `<button type="button" class="tab-button ${activeTab === id ? "active" : ""}" data-action="roommate-tab" data-id="${id}">${label} ${chip(String(count), activeTab === id ? "green" : "gray")}</button>`).join("")}</div>${tabContent}</div><aside><div class="subtle-panel"><h3>Hồ sơ ở ghép của bạn</h3>${roommateProfileSummary(me)}</div></aside></div>`;
 }
 
 function renderVerifications() {
@@ -645,10 +703,11 @@ function closeStays(c, date, reason) {
   c.closedAt = new Date().toISOString(); c.closureReason = reason;
 }
 
-function openAppointment() {
+function openAppointment(roomId = "") {
   if (state.role !== "landlord") return;
-  const c = state.conversations.find((item) => item.id === state.selectedConversation && item.users.includes("quan")) || byId(state.conversations, "c1");
-  const relatedRooms = [...new Set(c.messages.map((m) => m.roomId))].filter((id) => room(id)?.status === "AVAILABLE" && house(room(id).houseId).ownerId === "quan");
+  const c = state.conversations.find((item) => item.id === state.selectedConversation && item.users.includes(userId()) && (!roomId || item.messages.some((m) => m.roomId === roomId))) || state.conversations.find((item) => item.users.includes(userId()) && item.messages.some((m) => m.roomId === roomId)) || (roomId ? null : byId(state.conversations, "c1"));
+  if (!c) { flash("Phòng này chưa có hội thoại để tạo lịch xem."); return; }
+  const relatedRooms = [...new Set(c.messages.map((m) => m.roomId))].filter((id) => room(id)?.status === "AVAILABLE" && house(room(id).houseId).ownerId === userId());
   if (!relatedRooms.length) { flash("Hội thoại này chưa có phòng còn trống để đặt lịch."); return; }
   const suggested = Math.ceil((Date.now() + 15 * 60 * 1000) / (30 * 60 * 1000)) * 30 * 60 * 1000;
   modal("Tạo lịch xem phòng", `<form data-form="appointment"><input type="hidden" name="conversationId" value="${c.id}"><p class="muted tiny">Giờ Việt Nam (UTC+7). Lịch hẹn phải bắt đầu trong tương lai.</p><div class="form-grid"><label class="field">Người thuê<input value="${esc(person(c.users.find((x) => x !== "quan")).name)}" disabled></label><label class="field">Phòng<select name="roomId" required>${relatedRooms.map((id) => `<option value="${id}">${esc(roomName(id))}</option>`).join("")}</select></label><label class="field">Ngày xem<input type="date" name="date" value="${todayISO(suggested)}" min="${todayISO()}" required></label><label class="field">Giờ bắt đầu<input type="time" name="time" value="${vietnamTime(suggested)}" required></label><label class="field">Thời lượng<select name="duration">${[30, 60, 90, 120].map((n) => `<option value="${n}" ${n === 60 ? "selected" : ""}>${n} phút</option>`).join("")}</select></label><label class="field full">Ghi chú<textarea name="notes" placeholder="Địa điểm gặp, số điện thoại liên hệ..."></textarea></label></div><div class="form-actions">${button("Hủy", "close-dialog")}<button type="submit" class="button primary">${icon("calendar-check")} Lưu lịch hẹn</button></div></form>`);
@@ -679,11 +738,12 @@ function openMoveIn(id) {
   if (!planned.length) { flash("Không còn thành viên dự kiến vào ở."); return; }
   modal("Xác nhận thành viên vào ở", `<form data-form="move-in"><input type="hidden" name="contractId" value="${c.id}"><p>${esc(roomName(c.roomId))}. Chọn những người đã thực tế chuyển vào. Khi kích hoạt hợp đồng phải có đại diện.</p><div class="stack">${planned.map((m) => `<label class="list-row"><span><input type="checkbox" name="memberIds" value="${esc(m.id)}" ${!memberId || m.id === memberId ? "checked" : ""}> ${esc(m.name)}${representative(c)?.id === m.id ? " (đại diện)" : ""}</span></label>`).join("")}</div><label class="field">Ngày thực tế chuyển vào<input type="date" name="date" value="${todayISO()}" min="${c.start}" max="${todayISO() < c.end ? todayISO() : c.end}" required></label><div class="form-actions">${button("Hủy", "close-dialog")}<button class="button primary" type="submit">Xác nhận những người đã chọn</button></div></form>`);
 }
-function openChange(id) {
+function openChange(id, initialType = "RENEWAL") {
   const c = contract(id);
   if (!c || state.role !== "tenant" || c.tenantId !== userId() || c.status !== "ACTIVE") return;
   const alternatives = state.rooms.filter((r) => r.status === "AVAILABLE" && r.id !== c.roomId && house(r.houseId).ownerId === c.ownerId);
-  modal("Đề nghị điều chỉnh", `<form data-form="change-request"><input type="hidden" name="contractId" value="${c.id}"><div class="form-grid"><label class="field">Loại yêu cầu<select name="type" data-change="change-type"><option value="RENEWAL">Gia hạn</option><option value="TERMINATION">Kết thúc</option><option value="TRANSFER">Đổi phòng</option></select></label><label class="field">Ngày hiệu lực<input type="date" name="effective" value="${c.end}" required></label><label class="field full" id="transfer-target" hidden>Phòng muốn chuyển<select name="targetRoom">${alternatives.map((r) => `<option value="${r.id}">${esc(roomName(r.id))}</option>`).join("")}</select></label><label class="field full">Nội dung<textarea name="note" required placeholder="Nêu đề nghị của bạn..."></textarea></label></div><div class="form-actions">${button("Hủy", "close-dialog")}<button class="button primary" type="submit">Gửi đề nghị</button></div></form>`);
+  const requestMeta = { RENEWAL: ["Yêu cầu gia hạn hợp đồng", "Ví dụ: Em muốn gia hạn thêm 12 tháng với mức giá hiện tại.", "Gửi yêu cầu gia hạn"], TRANSFER: ["Yêu cầu thay đổi hợp đồng", "Ví dụ: Em muốn chuyển sang phòng khác từ ngày...", "Gửi yêu cầu thay đổi"], TERMINATION: ["Yêu cầu chấm dứt hợp đồng", "Nêu rõ lý do và ngày dự kiến bàn giao phòng.", "Gửi yêu cầu chấm dứt"] }[initialType] || ["Đề nghị điều chỉnh", "Nêu đề nghị của bạn...", "Gửi đề nghị"];
+  modal(requestMeta[0], `<form data-form="change-request"><input type="hidden" name="contractId" value="${c.id}"><div class="form-grid"><label class="field">Loại yêu cầu<select name="type" data-change="change-type"><option value="RENEWAL" ${initialType === "RENEWAL" ? "selected" : ""}>Gia hạn</option><option value="TERMINATION" ${initialType === "TERMINATION" ? "selected" : ""}>Kết thúc</option><option value="TRANSFER" ${initialType === "TRANSFER" ? "selected" : ""}>Đổi phòng</option></select></label><label class="field">Ngày hiệu lực<input type="date" name="effective" value="${c.end}" required></label><label class="field full" id="transfer-target" hidden>Phòng muốn chuyển<select name="targetRoom">${alternatives.map((r) => `<option value="${r.id}">${esc(roomName(r.id))}</option>`).join("")}</select></label><label class="field full">Nội dung<textarea name="note" required placeholder="${requestMeta[1]}"></textarea></label></div><div class="form-actions">${button("Hủy", "close-dialog")}<button class="button primary" type="submit">${requestMeta[2]}</button></div></form>`);
 }
 function openReviewChange(id) {
   const x = byId(state.changeRequests, id);
@@ -731,6 +791,39 @@ function openInvoice(id = "") {
   modal(invoice ? "Sửa hóa đơn nháp" : "Lập hóa đơn", `<form data-form="invoice"><input type="hidden" name="invoiceId" value="${esc(id)}"><div class="form-grid"><label class="field full">Hợp đồng<select name="contractId" data-change="invoice-contract" ${invoice ? "disabled" : ""}>${active.map((c) => `<option value="${c.id}" ${c.id === selected.id ? "selected" : ""}>${esc(c.number)} · ${esc(roomName(c.roomId))}</option>`).join("")}</select></label><label class="field">Kỳ thu<input type="month" name="period" value="${period.slice(0, 7)}" required></label><label class="field">Hạn thanh toán<input type="date" name="due" value="${due}" required></label><div class="field full"><strong>Tiền phòng</strong><span>${money(selected.rent)} / tháng · ${activeCount} người đang ở</span></div>${serviceFields}<label class="field">Khoản khác<input type="number" name="other" min="0" value="${invoice?.items.find((x) => x.type === "OTHER")?.price || 0}"></label><label class="field">Giảm trừ<input type="number" name="discount" min="0" value="${invoice?.items.find((x) => x.type === "DISCOUNT")?.price || 0}"></label></div><div class="form-actions">${button("Hủy", "close-dialog")}<button class="button primary" type="submit">Lưu bản nháp</button></div></form>`);
 }
 
+function openShareRoom(id) {
+  if (state.role !== "tenant") return;
+  const r = room(id);
+  const conversations = visibleConversations();
+  if (!r) return;
+  const shareUrl = roomShareUrl(id);
+  const conversationList = conversations.length
+    ? `<div class="share-conversation-list">${conversations.map((c, index) => { const peer = otherUser(c); const last = c.messages[c.messages.length - 1]; return `<label class="share-conversation-option"><input type="radio" name="conversationId" value="${esc(c.id)}" ${index === 0 ? "checked" : ""} required>${avatar(peer)}<span><strong>${esc(person(peer).name)}</strong><small>${esc(last?.text || "Chưa có tin nhắn")}</small></span></label>`; }).join("")}</div><label class="field full">Lời nhắn<textarea name="message" maxlength="1000" placeholder="Ví dụ: Mình thấy phòng này khá hợp với bạn..."></textarea></label><div class="form-actions"><button type="submit" class="button primary">${icon("send")} Chia sẻ trong hệ thống</button></div>`
+    : `<p class="muted tiny">Bạn chưa có cuộc trò chuyện nào. Hãy sao chép liên kết để gửi phòng qua ứng dụng khác.</p>`;
+  modal("Chia sẻ phòng", `<form data-form="share-room"><input type="hidden" name="roomId" value="${esc(id)}"><p>Chia sẻ bài đăng <strong>${esc(r.code)} · ${esc(r.title)}</strong> cho người bạn đã nhắn tin hoặc sao chép liên kết.</p>${conversationList}<div class="share-link-box"><input id="room-share-link" value="${esc(shareUrl)}" readonly aria-label="Liên kết phòng"><button type="button" class="button small" data-action="copy-room-link" data-id="${esc(id)}">${icon("copy")} Sao chép link</button></div><div class="form-actions">${button("Đóng", "close-dialog")}</div></form>`);
+}
+
+function roomShareUrl(id) {
+  const url = new URL(location.href);
+  url.searchParams.delete("view");
+  url.searchParams.delete("role");
+  url.searchParams.set("room", id);
+  return url.toString();
+}
+
+function copyRoomLink(id) {
+  const text = roomShareUrl(id);
+  const fallback = () => {
+    const input = document.createElement("textarea");
+    input.value = text; input.style.position = "fixed"; input.style.opacity = "0";
+    document.body.appendChild(input); input.select();
+    try { document.execCommand("copy"); flash("Đã sao chép link phòng."); } catch { flash("Không thể sao chép tự động. Hãy bôi đen và sao chép link."); }
+    input.remove();
+  };
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(() => flash("Đã sao chép link phòng.")).catch(fallback);
+  else fallback();
+}
+
 function openReportPost(id) { modal("Báo cáo tin đăng", `<form data-form="report-post"><input type="hidden" name="roomId" value="${esc(id)}"><p>${esc(room(id).title)}</p><label class="field">Lý do<textarea name="reason" required placeholder="Mô tả nội dung cần kiểm tra..."></textarea></label><div class="form-actions">${button("Hủy", "close-dialog")}<button class="button primary" type="submit">Gửi báo cáo</button></div></form>`); }
 function openResolveReport(id) { modal("Xử lý báo cáo", `<form data-form="resolve-report"><input type="hidden" name="reportId" value="${esc(id)}"><label class="field">Kết luận<textarea name="resolution" required></textarea></label><div class="form-actions">${button("Hủy", "close-dialog")}<button class="button primary" type="submit">Lưu kết luận</button></div></form>`); }
 function openReview(id) { modal("Đánh giá phòng", `<form data-form="review"><input type="hidden" name="contractId" value="${esc(id)}"><div class="form-grid"><label class="field">Số sao<select name="rating">${[5, 4, 3, 2, 1].map((n) => `<option value="${n}">${n} sao</option>`).join("")}</select></label><label class="field full">Nhận xét<textarea name="content" required placeholder="Trải nghiệm thực tế của bạn..."></textarea></label></div><div class="form-actions">${button("Hủy", "close-dialog")}<button class="button primary" type="submit">Đăng đánh giá</button></div></form>`); }
@@ -739,9 +832,29 @@ function editRoommateProfile() {
   const p = state.roommateProfile || seed.roommateProfile;
   modal("Tiêu chí ở ghép", `<form data-form="roommate-profile"><div class="form-grid"><label class="field full">Khu vực mong muốn<input name="location" value="${esc(p.location)}" required></label><label class="field">Ngân sách từ<input type="number" name="budgetMin" min="0" value="${p.budgetMin}" required></label><label class="field">Đến<input type="number" name="budgetMax" min="0" value="${p.budgetMax}" required></label><label class="field full">Thói quen / yêu cầu<textarea name="habits" required>${esc(p.habits)}</textarea></label><label class="field full">Sẵn sàng từ<input type="date" name="available" value="${p.available}" required></label></div><div class="form-actions">${button("Hủy", "close-dialog")}<button class="button primary" type="submit">Lưu hồ sơ</button></div></form>`);
 }
+function landlordMembers(houseId = "") {
+  const rooms = state.rooms.filter((r) => house(r.houseId)?.ownerId === userId() && (!houseId || r.houseId === houseId));
+  const roomIds = new Set(rooms.map((r) => r.id));
+  const members = [];
+  for (const c of state.contracts.filter((item) => item.ownerId === userId() && roomIds.has(item.roomId))) {
+    for (const m of c.members.filter((member) => member.tenantId && ["ACTIVE", "PLANNED"].includes(member.status))) {
+      if (!members.some((item) => item.userId === m.tenantId)) members.push({ userId: m.tenantId, name: m.name || person(m.tenantId).name, roomId: c.roomId });
+    }
+  }
+  return members;
+}
+
+function openAnnouncement(defaultKind = "NOTICE") {
+  if (state.role !== "landlord") return;
+  const houses = state.houses.filter((h) => h.ownerId === userId());
+  const members = landlordMembers();
+  if (!houses.length) { flash("Bạn chưa có tòa nhà để gửi thông báo."); return; }
+  modal(defaultKind === "MESSAGE" ? "Soạn tin nhắn" : "Gửi thông báo", `<form data-form="announcement"><p class="muted tiny">${defaultKind === "MESSAGE" ? "Soạn tin nhắn gửi trực tiếp đến thành viên hoặc toàn bộ tòa nhà." : "Thông báo sẽ được gửi đến đúng người nhận và xuất hiện trong chuông thông báo của họ."}</p><div class="form-grid"><label class="field">Loại nội dung<select name="kind"><option value="NOTICE" ${defaultKind === "NOTICE" ? "selected" : ""}>Thông báo</option><option value="MESSAGE" ${defaultKind === "MESSAGE" ? "selected" : ""}>Tin nhắn</option></select></label><label class="field">Mức độ<select name="priority"><option value="NORMAL">Bình thường</option><option value="IMPORTANT">Quan trọng</option><option value="URGENT">Khẩn cấp</option></select></label><label class="field">Gửi đến<select name="targetType" data-change="announcement-target"><option value="HOUSE">Tòa nhà</option><option value="MEMBER">Thành viên</option></select></label><label class="field" id="announcement-house-target">Tòa nhà<select name="houseId" required>${houses.map((h) => `<option value="${esc(h.id)}">${esc(h.name)} · ${esc(h.area)}</option>`).join("")}</select></label><label class="field" id="announcement-member-target" hidden>Thành viên<select name="memberId">${members.length ? members.map((m) => `<option value="${esc(m.userId)}">${esc(m.name)} · ${esc(roomName(m.roomId))}</option>`).join("") : `<option value="">Chưa có thành viên</option>`}</select></label><label class="field full">Tiêu đề<input name="title" maxlength="160" required placeholder="${defaultKind === "MESSAGE" ? "Ví dụ: Nhắc lịch nhận chìa khóa" : "Ví dụ: Bảo trì hệ thống nước"}"></label><label class="field full">Nội dung<textarea name="content" maxlength="3000" required placeholder="Nhập nội dung cần gửi..."></textarea></label></div><div class="form-actions">${button("Hủy", "close-dialog")}<button type="submit" class="button primary">${icon("send")} ${defaultKind === "MESSAGE" ? "Gửi tin nhắn" : "Gửi thông báo"}</button></div></form>`);
+}
+
 function openNotifications() {
-  const list = state.notifications.filter((n) => n.userId === userId());
-  modal("Thông báo", `<div class="stack">${list.length ? list.map((n) => `<div class="list-row"><div><strong>${esc(n.text)}</strong><small>${n.read ? "Đã đọc" : "Chưa đọc"}</small></div>${!n.read ? button("Đã đọc", "read-notification", n.id, "small") : ""}</div>`).join("") : `<div class="muted tiny">Không có thông báo.</div>`}</div>`);
+  const list = state.notifications.filter((n) => n.userId === userId()).sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+  modal("Thông báo", `<div class="stack">${list.length ? list.map((n) => `<div class="notification-item ${n.read ? "read" : "unread"}"><div class="notification-item-head"><strong>${esc(n.title || (n.kind === "MESSAGE" ? "Tin nhắn từ chủ trọ" : "Thông báo mới"))}</strong>${chip(n.kind === "MESSAGE" ? "Tin nhắn" : "Thông báo", n.priority === "URGENT" ? "red" : n.priority === "IMPORTANT" ? "yellow" : "gray")}</div><p>${esc(n.text)}</p><small>${n.read ? "Đã đọc" : "Chưa đọc"}</small>${!n.read ? button("Đánh dấu đã đọc", "read-notification", n.id, "small") : ""}</div>`).join("") : `<div class="muted tiny">Không có thông báo.</div>`}</div>`);
 }
 
 function openTemplate() {
@@ -765,8 +878,12 @@ function handleAction(action, id) {
     case "switch-role": switchRole(id); return;
     case "close-dialog": closeDialog(); return;
     case "notifications": openNotifications(); return;
+    case "open-announcement": openAnnouncement(); return;
+    case "open-message": openAnnouncement("MESSAGE"); return;
     case "read-notification": item = byId(state.notifications, id); if (item) item.read = true; save(); openNotifications(); renderShell(); refreshIcons(); return;
     case "favorite": state.favorites = state.favorites.includes(id) ? state.favorites.filter((x) => x !== id) : [...state.favorites, id]; finish(state.favorites.includes(id) ? "Đã lưu tin đăng." : "Đã bỏ lưu tin đăng."); return;
+    case "share-room": openShareRoom(id); return;
+    case "copy-room-link": copyRoomLink(id); return;
     case "clear-filters": state.filters = structuredClone(seed.filters); finish("Đã xóa bộ lọc."); return;
     case "room-detail": state.selectedRoom = id; state.view = "detail"; save(); render(); window.scrollTo(0, 0); return;
     case "chat-room": {
@@ -789,7 +906,9 @@ function handleAction(action, id) {
     case "select-context": selectChatContext(id); return;
     case "clear-context": selectChatContext(null); return;
     case "tab": state.tab = id; save(); render(); return;
+    case "roommate-tab": state.roommateTab = id; save(); render(); return;
     case "open-appointment": openAppointment(); return;
+    case "schedule-room-viewing": openAppointment(id); return;
     case "confirm-attendance":
     case "no-show": {
       item = byId(state.viewings, id);
@@ -837,6 +956,9 @@ function handleAction(action, id) {
     case "open-resend": openResend(id); return;
     case "confirm-move-in": openMoveIn(id); return;
     case "open-change": openChange(id); return;
+    case "open-renewal": openChange(id, "RENEWAL"); return;
+    case "open-transfer": openChange(id, "TRANSFER"); return;
+    case "open-termination": openChange(id, "TERMINATION"); return;
     case "review-change": openReviewChange(id); return;
     case "approve-change": item = byId(state.changeRequests, id); if (item?.status === "PENDING") { item.status = "APPROVED_WAITING_CONFIRMATION"; finish("Đã gửi phương án cho đại diện xác nhận."); } return;
     case "reject-change": item = byId(state.changeRequests, id); if (item?.status === "PENDING") { item.status = "REJECTED"; finish("Đã từ chối đề nghị."); } return;
@@ -1032,6 +1154,41 @@ function handleForm(form) {
       $(".chat-pane-body .message-row:last-of-type")?.scrollIntoView?.({ block: "nearest" });
       $("#chat-message")?.focus({ preventScroll: true }); return;
     }
+    case "share-room": {
+      const r = room(value("roomId"));
+      const c = byId(state.conversations, value("conversationId"));
+      if (state.role !== "tenant" || !r || !c?.users.includes(userId())) { flash("Không thể chia sẻ phòng trong cuộc trò chuyện này."); return; }
+      const text = value("message") || `Mình gửi bạn phòng ${r.code} · ${r.title}.`;
+      c.messages.push({ id: `m${Date.now()}`, senderId: userId(), roomId: r.id, text, time: new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) });
+      c.roomIds = [...new Set([...(c.roomIds || []), r.id])];
+      state.selectedConversation = c.id; state.chatContext = r.id; state.chatContexts[chatDraftKey(c.id)] = r.id; state.chatMobileOpen = true; state.view = "chats";
+      finish("Đã chia sẻ phòng vào cuộc trò chuyện."); return;
+    }
+    case "announcement": {
+      if (state.role !== "landlord") return;
+      const kind = value("kind");
+      const targetType = value("targetType");
+      const title = value("title");
+      const content = value("content");
+      const targetId = targetType === "HOUSE" ? value("houseId") : value("memberId");
+      const targetHouse = targetType === "HOUSE" ? house(targetId) : null;
+      const allowedMembers = landlordMembers();
+      let recipients = [];
+      if (!title || !content || !["NOTICE", "MESSAGE"].includes(kind) || !["HOUSE", "MEMBER"].includes(targetType)) { flash("Hãy nhập đầy đủ nội dung thông báo."); return; }
+      if (targetType === "HOUSE") {
+        if (!targetHouse || targetHouse.ownerId !== userId()) { flash("Tòa nhà không thuộc quyền quản lý của bạn."); return; }
+        recipients = landlordMembers(targetId).map((member) => member.userId);
+      } else if (allowedMembers.some((member) => member.userId === targetId)) {
+        recipients = [targetId];
+      }
+      recipients = [...new Set(recipients)];
+      if (!recipients.length) { flash("Không tìm thấy thành viên phù hợp để nhận thông báo."); return; }
+      const createdAt = Date.now();
+      const announcement = { id: `a${createdAt}`, senderId: userId(), kind, targetType, targetId, title, content, priority: value("priority"), createdAt, recipientIds: recipients };
+      state.announcements.push(announcement);
+      recipients.forEach((recipientId, index) => state.notifications.push({ id: `n${createdAt}-${index}`, userId: recipientId, announcementId: announcement.id, title, text: content, kind, priority: announcement.priority, houseId: targetType === "HOUSE" ? targetId : house(allowedMembers.find((member) => member.userId === recipientId)?.roomId)?.id, createdAt, read: false }));
+      finish(`Đã gửi ${kind === "MESSAGE" ? "tin nhắn" : "thông báo"} đến ${recipients.length} thành viên.`); return;
+    }
     case "appointment": {
       const c = byId(state.conversations, value("conversationId"));
       const r = room(value("roomId"));
@@ -1142,8 +1299,10 @@ function handleForm(form) {
       if (!c || c.status !== "ACTIVE" || state.role !== "tenant" || c.tenantId !== userId()) return;
       if (state.changeRequests.some((x) => x.contractId === c.id && ["PENDING", "APPROVED_WAITING_CONFIRMATION", "READY_TO_APPLY"].includes(x.status))) { flash("Hợp đồng đang có một yêu cầu chưa hoàn tất."); return; }
       if (value("type") === "TRANSFER" && !room(value("targetRoom"))) { flash("Chọn phòng muốn chuyển."); return; }
-      state.changeRequests.push({ id: `chg${Date.now()}`, contractId: c.id, type: value("type"), status: "PENDING", requestedBy: userId(), effective: value("effective"), targetRoomId: value("type") === "TRANSFER" ? value("targetRoom") : null, note: value("note") });
-      finish("Đã gửi yêu cầu điều chỉnh cho chủ trọ."); return;
+      const request = { id: `chg${Date.now()}`, contractId: c.id, type: value("type"), status: "PENDING", requestedBy: userId(), effective: value("effective"), targetRoomId: value("type") === "TRANSFER" ? value("targetRoom") : null, note: value("note") };
+      state.changeRequests.push(request);
+      state.notifications.push({ id: `n${Date.now()}-change`, userId: c.ownerId, contractId: c.id, changeRequestId: request.id, text: `${person(userId()).name} đã gửi yêu cầu ${request.type === "RENEWAL" ? "gia hạn" : request.type === "TRANSFER" ? "đổi phòng" : "kết thúc"} hợp đồng ${c.number}.`, read: false });
+      finish(request.type === "RENEWAL" ? "Đã gửi yêu cầu gia hạn cho chủ trọ." : "Đã gửi yêu cầu điều chỉnh cho chủ trọ."); return;
     }
     case "service": {
       const current = byId(state.services, value("serviceId"));
@@ -1295,6 +1454,17 @@ document.addEventListener("change", (event) => {
   if (target.dataset.change === "invoice-contract") { state.invoiceContractSelection = target.value; save(); openInvoice(); }
   if (target.dataset.change === "contract-template") { const selected = byId(state.templates || [], target.value); const terms = target.form?.elements.terms; if (selected && terms) terms.value = selected.content; }
   if (target.dataset.change === "change-type") { const section = $("#transfer-target"); if (section) section.hidden = target.value !== "TRANSFER"; }
+  if (target.dataset.change === "announcement-target") {
+    const houseTarget = $("#announcement-house-target");
+    const memberTarget = $("#announcement-member-target");
+    const houseSelect = houseTarget?.querySelector("select");
+    const memberSelect = memberTarget?.querySelector("select");
+    const isHouse = target.value === "HOUSE";
+    if (houseTarget) houseTarget.hidden = !isHouse;
+    if (memberTarget) memberTarget.hidden = isHouse;
+    if (houseSelect) houseSelect.required = isHouse;
+    if (memberSelect) memberSelect.required = !isHouse;
+  }
 });
 document.addEventListener("input", (event) => {
   if (event.target.id === "chat-message") {
@@ -1310,5 +1480,7 @@ document.addEventListener("input", (event) => {
 const initialParams = new URLSearchParams(location.search);
 if (["tenant", "landlord", "admin"].includes(initialParams.get("role"))) state.role = initialParams.get("role");
 if (NAV[state.role].some(([id]) => id === initialParams.get("view"))) state.view = initialParams.get("view");
+const sharedRoom = room(initialParams.get("room"));
+if (sharedRoom) { state.selectedRoom = sharedRoom.id; state.view = "detail"; }
 window.__troday = { getState: () => state, reset: () => { state = structuredClone(seed); save(); render(); }, action: handleAction };
 render();
