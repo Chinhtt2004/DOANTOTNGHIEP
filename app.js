@@ -272,6 +272,16 @@ function syncChatComposer() {
   input.form.querySelector("button[type=submit]").disabled = !input.value.trim();
 }
 
+function chatViewingCards(conversation) {
+  if (conversation.type === "ROOMMATE" || conversation.users.length !== 2 || !conversation.users.includes(userId())) return "";
+  const viewings = state.viewings.filter((v) => v.conversationId === conversation.id && v.ownerId !== v.tenantId && conversation.users.includes(v.ownerId) && conversation.users.includes(v.tenantId) && room(v.roomId));
+  if (!viewings.length) return "";
+  return `<section class="chat-viewings" aria-label="Lịch xem trong hội thoại"><h3>Lịch xem phòng</h3>${viewings.sort((a, b) => viewingStart(a) - viewingStart(b)).map((v) => {
+    const r = room(v.roomId);
+    return `<article class="chat-viewing-card" data-viewing-id="${esc(v.id)}"><div class="chat-viewing-heading"><strong>${icon("calendar-days")} Lịch xem ${esc(r.code)}</strong>${chip(...(VIEWING_LABEL[v.status] || ["Chưa rõ trạng thái", "gray"]))}</div><p class="chat-viewing-time">${dateLabel(todayISO(viewingStart(v)))} · ${viewingTimeLabel(v)} <span>(UTC+7)</span></p><p class="muted tiny">${esc(house(r.houseId).name)} · ${esc(house(r.houseId).address)}</p>${v.notes ? `<p class="chat-viewing-note">Ghi chú: ${esc(v.notes)}</p>` : ""}${v.cancellationReason ? `<p class="chat-viewing-note">Lý do hủy: ${esc(v.cancellationReason)}</p>` : ""}${v.status === "COMPLETED" ? `<div class="chat-viewing-decision">${chip(...(DECISION_LABEL[v.decision] || ["Chờ quyết định", "gray"]))}</div>` : ""}<div class="chat-viewing-actions">${button("Xem phòng", "room-detail", v.roomId, "small")}${viewingActions(v)}</div></article>`;
+  }).join("")}</section>`;
+}
+
 function renderChats() {
   const conversations = visibleConversations();
   const current = conversations.find((c) => c.id === state.selectedConversation) || conversations[0];
@@ -308,7 +318,7 @@ function renderChats() {
           ${avatar(peer)}<div class="head-copy"><h2>${esc(person(peer).name)}</h2><small>${isRoommate ? "Đã kết nối · Trao đổi ở ghép" : `${choices.length} phòng đã trao đổi`}</small></div>
           ${isRoommate ? button("Xem hồ sơ", "roommate-profile", peer, "small") : button(`${icon("calendar-plus")} Hẹn xem`, "open-appointment", "", "small", state.role !== "landlord" ? "disabled title=\"Chủ trọ tạo lịch hẹn\"" : "")}
         </div>
-        <div class="chat-pane-body" role="log" aria-label="Nội dung hội thoại">${isRoommate ? '<p class="connection-note">Hai bạn đã kết nối để trao đổi. Việc thuê chung cần được thỏa thuận và xác nhận riêng.</p>' : '<div class="message-date">Hội thoại gần đây</div>'}${messages || (isRoommate ? '<p class="muted tiny">Gửi lời chào để bắt đầu cuộc trò chuyện.</p>' : "")}</div>
+        <div class="chat-pane-body" role="log" aria-label="Nội dung hội thoại">${isRoommate ? '<p class="connection-note">Hai bạn đã kết nối để trao đổi. Việc thuê chung cần được thỏa thuận và xác nhận riêng.</p>' : '<div class="message-date">Hội thoại gần đây</div>'}${messages || (isRoommate ? '<p class="muted tiny">Gửi lời chào để bắt đầu cuộc trò chuyện.</p>' : "")}${chatViewingCards(current)}</div>
         <form class="chat-composer" data-form="chat-message" aria-label="Soạn tin nhắn">
           ${!isRoommate ? `<div class="chat-room-picker">
             <label for="chat-room-context">Trao đổi về</label>
@@ -1018,7 +1028,9 @@ function handleForm(form) {
       const now = new Date();
       c.messages.push({ id: `m${Date.now()}`, senderId: userId(), roomId: r?.id || null, text, time: now.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) });
       delete state.chatDrafts[chatDraftKey(c.id)];
-      save(); render(); $("#chat-message")?.focus({ preventScroll: true }); return;
+      save(); render();
+      $(".chat-pane-body .message-row:last-of-type")?.scrollIntoView?.({ block: "nearest" });
+      $("#chat-message")?.focus({ preventScroll: true }); return;
     }
     case "appointment": {
       const c = byId(state.conversations, value("conversationId"));
@@ -1033,8 +1045,13 @@ function handleForm(form) {
       const end = start + duration * 60 * 1000;
       const overlaps = state.viewings.some((v) => v.roomId === r.id && v.status === "SCHEDULED" && start < viewingEnd(v) && end > viewingStart(v));
       if (overlaps) { flash("Phòng đã có lịch xem trùng giờ."); return; }
-      state.viewings.push({ id: `v${Date.now()}`, roomId: r.id, tenantId: c.users.find((x) => x !== userId()), ownerId: userId(), conversationId: c.id, date, time, startsAt: new Date(start).toISOString(), endsAt: new Date(end).toISOString(), status: "SCHEDULED", decision: "WAITING", notes: value("notes") });
-      state.view = "viewings"; finish("Đã lưu lịch xem phòng."); return;
+      const viewingId = `v${Date.now()}`;
+      state.viewings.push({ id: viewingId, roomId: r.id, tenantId: c.users.find((x) => x !== userId()), ownerId: userId(), conversationId: c.id, date, time, startsAt: new Date(start).toISOString(), endsAt: new Date(end).toISOString(), status: "SCHEDULED", decision: "WAITING", notes: value("notes") });
+      if (state.view === "chats") { state.selectedConversation = c.id; state.chatMobileOpen = true; }
+      else state.view = "viewings";
+      finish("Đã lưu lịch xem phòng.");
+      if (state.view === "chats") $(`[data-viewing-id="${viewingId}"]`)?.scrollIntoView?.({ block: "nearest" });
+      return;
     }
     case "create-contract": {
       const v = byId(state.viewings, value("viewingId"));

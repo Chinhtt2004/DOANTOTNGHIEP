@@ -106,6 +106,32 @@ async function main() {
     await evaluate(`document.querySelector('[data-action="withdraw-rent"][data-id="v3"]').click()`);
     assert.equal(await evaluate(`__troday.getState().viewings.find(v => v.id === 'v3').decision`), "WITHDRAWN");
 
+    // Viewings appear in their chat and share live state with the calendar.
+    await page("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
+    await evaluate(`__troday.reset(); __troday.action('switch-role', 'landlord'); __troday.action('navigate', 'chats'); __troday.action('select-chat', 'c1')`);
+    assert.equal(await evaluate(`document.querySelectorAll('.chat-viewing-card').length`), 3);
+    assert.equal(await evaluate(`document.querySelector('[data-viewing-id="v1"]').textContent.includes('17:00–18:00') && !document.querySelector('[data-viewing-id="v4"]')`), true);
+    await evaluate(`document.querySelector('[data-action="open-appointment"]').click(); document.querySelector('[name="roomId"]').value = 'r1'; document.querySelector('[name="notes"]').value = 'Gặp tại cổng nhà trọ'; document.querySelector('form[data-form="appointment"]').requestSubmit()`);
+    const chatViewingId = await evaluate(`__troday.getState().viewings.at(-1).id`);
+    const chatViewingSelector = `[data-viewing-id="${chatViewingId}"]`;
+    assert.equal(await evaluate(`__troday.getState().view === 'chats' && !document.querySelector('#app-dialog').open`), true);
+    assert.equal(await evaluate(`document.querySelector(${JSON.stringify(chatViewingSelector)}).textContent.includes('10:30–11:30') && document.querySelector(${JSON.stringify(chatViewingSelector)}).textContent.includes('Gặp tại cổng nhà trọ')`), true);
+    assert.equal(await evaluate(`(() => { const card = document.querySelector(${JSON.stringify(chatViewingSelector)}).getBoundingClientRect(); const log = document.querySelector('[role="log"]').getBoundingClientRect(); return card.top >= log.top && card.bottom <= log.bottom; })()`), true);
+    await page("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    assert.equal(await evaluate(`document.querySelector('.chat-shell').classList.contains('thread-open') && document.documentElement.scrollWidth <= window.innerWidth`), true);
+    assert.equal(await evaluate(`document.querySelector('.chat-composer').getBoundingClientRect().bottom <= window.innerHeight`), true);
+    await evaluate(`document.querySelector('#chat-message').value = 'Mình đã nhận lịch hẹn.'; document.querySelector('#chat-message').dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('form[data-form="chat-message"]').requestSubmit()`);
+    const sentMessageBounds = await evaluate(`(() => { const message = document.querySelector('.chat-pane-body .message-row:last-of-type').getBoundingClientRect(); const log = document.querySelector('[role="log"]').getBoundingClientRect(); return { messageTop: message.top, messageBottom: message.bottom, logTop: log.top, logBottom: log.bottom }; })()`);
+    assert.ok(sentMessageBounds.messageTop >= sentMessageBounds.logTop - 1 && sentMessageBounds.messageBottom <= sentMessageBounds.logBottom + 1, JSON.stringify(sentMessageBounds));
+    await evaluate(`document.querySelector(${JSON.stringify(chatViewingSelector)}).querySelector('[data-action="cancel-viewing"]').click(); document.querySelector('[name="reason"]').value = 'Đổi kế hoạch xem phòng'; document.querySelector('form[data-form="cancel-viewing"]').requestSubmit()`);
+    assert.equal(await evaluate(`document.querySelector(${JSON.stringify(chatViewingSelector)}).textContent.includes('Đã hủy') && document.querySelector(${JSON.stringify(chatViewingSelector)}).textContent.includes('Đổi kế hoạch xem phòng')`), true);
+    await evaluate(`__troday.action('switch-role', 'tenant'); __troday.action('navigate', 'chats'); __troday.action('select-chat', 'c1')`);
+    assert.equal(await evaluate(`document.querySelector(${JSON.stringify(chatViewingSelector)}).textContent.includes('Đã hủy') && !document.querySelector('.chat-viewing-card [data-action="confirm-attendance"]')`), true);
+    await evaluate(`__troday.action('navigate', 'viewings')`);
+    assert.equal(await evaluate(`document.querySelector('#app-main').textContent.includes('Đổi kế hoạch xem phòng')`), true);
+    await evaluate(`__troday.action('navigate', 'chats'); __troday.action('select-chat', 'c1')`);
+    assert.equal(await evaluate(`document.querySelectorAll(${JSON.stringify(chatViewingSelector)}).length`), 1);
+
     // Connection acceptance opens messaging, independently of rental consent.
     await page("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
     await evaluate(`__troday.reset(); __troday.action('navigate', 'roommates')`);
@@ -117,6 +143,7 @@ async function main() {
     const roommateChatId = await evaluate(`__troday.getState().selectedConversation`);
     assert.equal(await evaluate(`!document.querySelector('#app-dialog').open && __troday.getState().view === 'chats' && __troday.getState().conversations.find(c => c.id === ${JSON.stringify(roommateChatId)}).users.includes('bao')`), true);
     assert.equal(await evaluate(`!document.querySelector('[data-action="open-appointment"]') && !document.querySelector('#chat-room-context')`), true);
+    assert.equal(await evaluate(`document.querySelectorAll('.chat-viewing-card').length`), 0);
     await evaluate(`document.querySelector('#chat-message').value = 'Chào Bảo, mình muốn trao đổi trước khi quyết định thuê chung.'; document.querySelector('#chat-message').dispatchEvent(new Event('input', { bubbles: true }))`);
     assert.equal(await evaluate(`document.querySelector('.chat-send').disabled`), false);
     await evaluate(`document.querySelector('form[data-form="chat-message"]').requestSubmit()`);
@@ -153,7 +180,7 @@ async function main() {
     await evaluate(`document.querySelector('[data-action="edit-roommate-profile"]').click()`);
     assert.equal(await evaluate(`Boolean(document.querySelector('form[data-form="roommate-profile"]'))`), true);
     assert.deepEqual(errors, []);
-    console.log("Browser smoke passed: representative handover, approval hold, group move-in, UTC+7 calendar, cancellation, roommate profiles and connection chat, message persistence and mobile layout; no runtime exceptions.");
+    console.log("Browser smoke passed: representative handover, approval hold, group move-in, UTC+7 calendar, live viewing cards in chat, cancellation, roommate profiles and connection chat, persistence and mobile layout; no runtime exceptions.");
     await call("Browser.close");
   } finally {
     socket?.close(); chrome?.kill();

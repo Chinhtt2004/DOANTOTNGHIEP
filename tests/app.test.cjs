@@ -36,6 +36,7 @@ function demo(savedState) {
   return { state, api, node, action: api.handleAction, submit: (name, values) => api.handleForm({ dataset: { form: name }, values }), now: (value) => { now = Date.parse(value); } };
 }
 const byId = (items, id) => items.find((item) => item.id === id);
+const viewingCard = (d, id) => d.node("#app-main").innerHTML.match(new RegExp('<article class="chat-viewing-card" data-viewing-id="' + id + '">([\\s\\S]*?)</article>'))?.[1] || "";
 const k2 = (d) => byId(d.state.contracts, "k2");
 const join = (d) => byId(d.state.joinRequests, "join1");
 function change(d, type, extra = {}) {
@@ -395,4 +396,55 @@ test("invitation profiles show shared criteria without disclosing resident ident
   const old = structuredClone(d.state); delete old.roommateProfiles;
   const restored = demo(old); restored.state.role = "tenant"; restored.action("roommate-profile", "bao");
   assert.match(restored.node("#dialog-body").innerHTML, /Lê Gia Bảo/); assert.match(restored.node("#dialog-body").innerHTML, /Cầu Giấy/);
+});
+
+test("chat viewing cards belong to the exact conversation and participant pair", () => {
+  const d = demo(); d.state.role = "tenant"; d.action("navigate", "chats"); d.action("select-chat", "c1");
+  const before = JSON.stringify({ viewings: d.state.viewings, messages: d.state.conversations });
+  assert.match(viewingCard(d, "v1"), /Lịch xem P101/); assert.match(viewingCard(d, "v1"), /17:00–18:00/);
+  assert.match(viewingCard(d, "v1"), /UTC\+7/); assert.match(viewingCard(d, "v2"), /Đã đến xem/);
+  assert.equal(viewingCard(d, "v4"), "");
+  d.api.render(); assert.equal(JSON.stringify({ viewings: d.state.viewings, messages: d.state.conversations }), before);
+  d.state.viewings.push({ ...byId(d.state.viewings, "v1"), id: "wrong-peer", tenantId: "bao" });
+  d.api.render(); assert.equal(viewingCard(d, "wrong-peer"), "");
+  d.action("select-chat", "c2"); assert.match(viewingCard(d, "v4"), /Lịch xem B12/); assert.equal(viewingCard(d, "v1"), "");
+  d.action("accept-roommate", "rm1");
+  d.state.viewings.push({ ...byId(d.state.viewings, "v1"), id: "wrong-type", ownerId: "bao", conversationId: d.state.selectedConversation });
+  d.api.render(); assert.equal(viewingCard(d, "wrong-type"), "");
+});
+
+test("scheduling from chat keeps the conversation open, preserves drafts and restores a single live card", () => {
+  const d = demo(); d.action("navigate", "chats"); d.action("select-chat", "c1");
+  d.state.chatDrafts["quan:c1"] = "Mình gặp ở cổng nhé.";
+  d.submit("appointment", { conversationId: "c1", roomId: "r1", date: "2026-10-24", time: "23:30", duration: "120", notes: '<b>Gặp tại cổng</b>\nMang theo giấy tờ' });
+  const v = d.state.viewings.at(-1);
+  assert.equal(d.state.view, "chats"); assert.equal(d.state.selectedConversation, "c1"); assert.equal(d.state.chatMobileOpen, true);
+  assert.equal(d.state.chatDrafts["quan:c1"], "Mình gặp ở cổng nhé.");
+  assert.match(viewingCard(d, v.id), /23:30–01:30/); assert.match(viewingCard(d, v.id), /&lt;b&gt;Gặp tại cổng&lt;\/b&gt;/);
+  assert.match(viewingCard(d, v.id), /25\/10\/2026/);
+  const restored = demo(d.state); restored.action("navigate", "chats"); restored.action("select-chat", "c1");
+  assert.equal(restored.node("#app-main").innerHTML.split('data-viewing-id="' + v.id + '"').length - 1, 1);
+  assert.match(viewingCard(restored, v.id), /Đã hẹn/);
+});
+
+test("viewing updates from chat and calendar share one record with role-specific actions", () => {
+  const d = demo(); d.action("navigate", "chats"); d.action("select-chat", "c1");
+  const count = d.state.viewings.length;
+  assert.match(viewingCard(d, "v1"), /confirm-attendance/);
+  d.state.role = "tenant"; d.api.render();
+  assert.doesNotMatch(viewingCard(d, "v1"), /confirm-attendance|no-show/);
+  assert.match(viewingCard(d, "v1"), /cancel-viewing/);
+  d.submit("cancel-viewing", { viewingId: "v1", reason: '<script>Đổi lịch</script>' });
+  assert.match(viewingCard(d, "v1"), /Đã hủy/); assert.match(viewingCard(d, "v1"), /&lt;script&gt;Đổi lịch&lt;\/script&gt;/);
+  assert.doesNotMatch(viewingCard(d, "v1"), /cancel-viewing/); assert.equal(d.state.viewings.length, count);
+  d.action("agree-rent", "v2"); assert.match(viewingCard(d, "v2"), /Đồng ý thuê/);
+  d.action("navigate", "viewings"); assert.match(d.node("#app-main").innerHTML, /Đã hủy|Đồng ý thuê/);
+  d.state.role = "landlord"; d.action("navigate", "chats"); d.action("select-chat", "c1");
+  assert.match(viewingCard(d, "v2"), /open-contract/);
+});
+
+test("scheduling outside chat still opens the calendar", () => {
+  const d = demo(); d.state.view = "dashboard";
+  d.submit("appointment", { conversationId: "c1", roomId: "r1", date: "2026-10-24", time: "10:30", duration: "30" });
+  assert.equal(d.state.view, "viewings"); assert.equal(d.state.viewings.at(-1).status, "SCHEDULED");
 });

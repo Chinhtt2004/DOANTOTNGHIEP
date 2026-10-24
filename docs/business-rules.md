@@ -56,9 +56,11 @@ Ký hiệu: **Có** = đang được mô phỏng bằng code; **Sửa** = đã c
 | HT-02 | Một hội thoại UI có thể chứa nhiều ngữ cảnh phòng và tin nhắn chung; các ngữ cảnh được hiển thị trong dòng thời gian. | Có |
 | HT-03 | Chỉ chọn ngữ cảnh phòng thuộc chủ trọ trong hội thoại; giới hạn tin nhắn 2.000 ký tự, không gửi nội dung trống. | Có |
 | HT-04 | Nháp và ngữ cảnh đang chọn được lưu riêng theo người dùng/hội thoại. Enter gửi, Shift+Enter xuống dòng. | Có |
-| HT-05 | Chủ trọ tạo lịch từ hội thoại cho người thuê và phòng đã trao đổi. | Có |
+| HT-05 | Chủ trọ tạo lịch từ hội thoại cho người thuê và phòng đã trao đổi. Tạo lịch từ chat giữ nguyên cuộc trò chuyện và cuộn tới thẻ lịch vừa tạo; tạo từ màn hình khác mở danh sách lịch xem. | Có / Sửa |
 | HT-06 | Với hội thoại hỏi phòng, SQL v5 gắn một conversation với một phòng/bài đăng; cần nhóm nhiều conversation ở lớp ứng dụng hoặc migration ngữ cảnh chat để lưu đúng mô hình UI. Hội thoại ở ghép dùng loại `ROOMMATE` và liên kết lời mời đã chấp nhận. | Thiết kế |
 | HT-07 | Chat ở ghép không có nút hẹn xem hoặc ngữ cảnh phòng của cuộc chat trước. Tin nhắn lưu trong cùng hội thoại khi tải lại hoặc mở lại từ lời mời/hồ sơ. Chỉ thành viên của kết nối còn hiệu lực được mở và gửi. | Mới |
+| HT-08 | Trong nội dung chat có khối lịch xem của đúng hội thoại và đúng cặp người thuê/chủ trọ, sắp theo giờ hẹn. Thẻ hiển thị phòng, địa điểm, ngày/giờ UTC+7, ghi chú, trạng thái lịch và quyết định thuê; thao tác theo quyền như màn hình Lịch xem. Lịch hủy vẫn giữ thẻ và lý do. | Mới |
+| HT-09 | Thẻ lịch đọc trực tiếp bản ghi lịch xem, không sao chép thành tin nhắn văn bản hoặc tạo lịch trùng khi tải lại. Chat và danh sách lịch dùng chung trạng thái. Không đưa lịch của chủ trọ vào chat ở ghép. Khi gửi tin, cuộn tới tin vừa gửi để khối lịch không che tin mới. | Mới |
 
 ### 1.5. Lịch xem và quyết định thuê
 
@@ -74,6 +76,8 @@ Ký hiệu: **Có** = đang được mô phỏng bằng code; **Sửa** = đã c
 | LX-08 | Sau khi xem xong, người thuê chuyển quyết định từ `WAITING` sang `AGREED` hoặc `DECLINED`; lưu người và thời điểm quyết định. | Có / Sửa |
 | LX-09 | Chỉ rút ý định từ `AGREED` sang `WITHDRAWN`; còn hợp đồng mở thì phải xử lý hợp đồng trước. Không cho sửa ngược quyết định chỉ bằng nút cũ. | Sửa |
 | LX-10 | Tổng quan chỉ đếm lịch đã hẹn chưa hết giờ và sắp xếp theo giờ bắt đầu. | Sửa |
+
+Hiển thị lịch trong chat dùng liên kết `room_viewing_requests.conversation_id` đã có; không đổi cấu trúc CSDL. API cần trả lịch theo hội thoại có người dùng tham gia và kiểm tra đúng chủ trọ/người thuê. Thẻ lấy trạng thái hiện tại của lịch, không dùng một bản sao nội dung thông báo để suy ra kết quả mới nhất.
 
 ### 1.6. Lập hợp đồng, phiên bản và vào ở ban đầu
 
@@ -346,7 +350,7 @@ Sửa các lỗi trên không đồng nghĩa wireframe đã thay thế backend h
 
 Chạy `npm test` trong thư mục wireframe. Bộ kiểm thử gọi các handler thực tế với đồng hồ cố định, bao phủ sức chứa, giữ chỗ, trạng thái hợp đồng, vào ở theo nhóm/từng người, chuyển phòng không cập nhật dở dang, lịch UTC+7 và hủy/rút ý định.
 
-Kết quả sau bổ sung chat kết nối: 41/41 tình huống đạt, cả với múi giờ thiết bị Los Angeles. Có kiểm tra bàn giao đại diện, giữ hóa đơn/phiên bản/người xem ban đầu, chỉ kết nối không tạo đồng thuận thuê, chặn lời mời chéo, quyền người nhận, gửi tin và giữ lịch sử sau tải lại, mở hồ sơ và không lộ thông tin căn cước. Kiểm tra trình duyệt bằng `npm run test:browser` (Node 22+, Chrome cài tại đường dẫn mặc định hoặc cấu hình `CHROME_PATH`) cũng đạt: thao tác nút/form thật, bàn giao, hợp đồng hai người, lịch UTC+7, hủy/rút ý định, xem hồ sơ người gửi, chấp nhận để mở đúng chat, gửi tin, khôi phục từ localStorage và bố cục di động; không có lỗi JavaScript khi chạy các luồng đó. Các kiểm tra JavaScript/Chrome này độc lập với bộ kiểm thử MySQL bên dưới.
+Kết quả sau bổ sung lịch trong chat: 45/45 tình huống đạt, cả với múi giờ thiết bị Los Angeles. Có kiểm tra bàn giao đại diện, giữ hóa đơn/phiên bản/người xem ban đầu, chỉ kết nối không tạo đồng thuận thuê, chặn lời mời chéo, quyền người nhận, gửi tin và giữ lịch sử sau tải lại, mở hồ sơ và không lộ thông tin căn cước. Các kiểm tra lịch trong chat bao phủ đúng hội thoại/cặp người, giờ qua ngày, ghi chú, đồng bộ hủy/quyết định thuê, giữ nháp và không tạo thẻ trùng sau tải lại. Kiểm tra trình duyệt bằng `npm run test:browser` (Node 22+, Chrome cài tại đường dẫn mặc định hoặc cấu hình `CHROME_PATH`) cũng đạt: thao tác nút/form thật, bàn giao, hợp đồng hai người, lịch UTC+7, tạo/hủy lịch ngay trong chat, cuộn tới lịch/tin mới, hủy/rút ý định, xem hồ sơ người gửi, chấp nhận để mở đúng chat, gửi tin, khôi phục từ localStorage và bố cục di động; không có lỗi JavaScript khi chạy các luồng đó. Các kiểm tra JavaScript/Chrome này độc lập với bộ kiểm thử MySQL bên dưới.
 
 Chạy `npm run test:database` để tạo instance MySQL tạm riêng và kiểm tra SQL. **22/22 kiểm tra tích hợp đạt trên MySQL 8.0.42**, gồm tạo mới 40 bảng, nâng cấp v5 gốc, tính tương đương cột/FK của hai cách tạo, bàn giao trên hợp đồng nhập giấy và thuê mới, người vào sau ngày kích hoạt tiếp quản, lịch sử không bị ghi đè, giữ hóa đơn/phiên bản cũ, vào ở theo nhóm/từng người, kết thúc/đổi phòng đầy đủ, lịch xem UTC và rút ý định. Đã kiểm tra hai phiên duyệt cùng tranh chỗ cuối chỉ một phiên thành công; migration từ chối dữ liệu vượt sức chứa hoặc bản nháp trùng phòng trước khi đổi cấu trúc. Thủ tục cũng từ chối giao dịch lồng mà không commit/rollback nhầm giao dịch của bên gọi.
 
